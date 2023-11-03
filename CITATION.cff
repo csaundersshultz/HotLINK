@@ -11,6 +11,6 @@ authors:
   - given-names: Pablo
     family-names: Saunders-Shultz
     email: csaundersshultz@gmail.com
-    name-particle: Che Pascal
+    name-particle:
     affiliation: University of Alaska Fairbanks
 repository-code: 'https://github.com/csaundersshultz/HotLINK'
