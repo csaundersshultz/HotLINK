@@ -21,6 +21,23 @@ from skimage.segmentation import find_boundaries
 import pandas as pd
 #warnings.simplefilter('ignore', np.RankWarning)
 
+
+
+
+
+VIIRS_MIR_RAD_MIN = 0.0015104711801057938
+VIIRS_MIR_RAD_MAX = 3.9207917784696003
+VIIRS_TIR_RAD_MIN = 0.13924616311648136
+VIIRS_TIR_RAD_MAX = 32.78489204255699
+
+def normalize(img, min_rad, max_rad):
+    img = np.array(img)
+    normalized = (img - min_rad) / (max_rad - min_rad)
+    return normalized
+
+
+#####DEPRECATED VARIABLES AND FUNCTIONS
+
 #VARIABLES USED INTERNALLY MOSTLY
 volcano_coords ={"veni":(56.1979, -159.3931),
                  "bogo":(53.9272, -168.0344),"clev":(52.8220, -169.9450),"okmo":(53.3970, -168.1660),
