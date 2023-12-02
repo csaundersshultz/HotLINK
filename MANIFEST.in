@@ -1,0 +1,3 @@
+include *.txt
+recursive-include hotlink_model *
+recursive-include example_data *
