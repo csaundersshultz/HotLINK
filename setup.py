@@ -1,4 +1,4 @@
-from setuptools import setup#, find_packages
+from setuptools import setup, find_packages
 
 setup(
     name='hotlink',
@@ -8,7 +8,7 @@ setup(
     author_email='csaundersshultz@gmail.com',
     license='MIT',
     description='An example of a python package from pre-existing code',
-    packages=['hotlink', 'hotlink_model', 'example_data',],
+    packages=find_packages(),
     install_requires=[
     	# DEPENDENCIES
     	'numpy',
@@ -17,6 +17,7 @@ setup(
     	'scipy',
     	'scikit-image',
     ],
+    include_package_data=True
     zip_safe=False,
 
 )
