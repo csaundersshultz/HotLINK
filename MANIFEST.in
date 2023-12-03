@@ -1,3 +1,2 @@
-include *.txt
-recursive-include hotlink_model *
-recursive-include example_data *
+graft example_data
+graft hotlink_model
