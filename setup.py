@@ -16,6 +16,7 @@ setup(
     	'ephem',
     	'scipy',
     	'scikit-image',
+    	'gdal'
     ],
     zip_safe=False,
 
