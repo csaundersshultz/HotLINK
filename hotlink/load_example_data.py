@@ -15,7 +15,7 @@ from datetime import datetime
 
 #Initialize all 257 file pairs
 file_pairs = []
-files = os.listdir("~/example_data/")
+files = os.listdir("/example_data/") #relative path to data
 
 # Filter files that match the pattern "I04_date_time.tif" or "I05_date_time.tif"
 i04_files = [file for file in files if file.startswith("I04_")]
