@@ -8,7 +8,8 @@ function for loading example dataset
 
 
 import os
-import gdal
+import numpy as np
+from PIL.Image import open
 from datetime import datetime
 
 
@@ -35,7 +36,7 @@ def load_example_data(num):
 
 	"""
 	files = file_pairs[num]
-	mir = gdal.Open(files[0]).ReadAsArray()
-	tir = gdal.Open(files[1]).ReadAsArray()
+	mir = np.array( open(files[0]))
+	tir = np.array( open(files[1]))
 	date = datetime.strptime( files[0].lstrip('I04_').rstrip('_shis.tif') )
 	return mir, tir, date
