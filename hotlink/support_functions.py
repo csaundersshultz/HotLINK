@@ -29,7 +29,7 @@ def normalize(img, min_rad, max_rad):
     normalize values in img, by min radiance and max radiance values
     """
     img = np.array(img)
-    normalized = (img - min_rad) / (max_rad - min_rad+0.00000001)
+    normalized = (img - min_rad) / (max_rad - min_rad+0.00000001) #add infinitesimal to avoid divide by zero
     return normalized
 
 def normalize_MIR(img):
