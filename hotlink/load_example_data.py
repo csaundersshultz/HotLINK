@@ -13,9 +13,13 @@ from PIL.Image import open
 from datetime import datetime
 
 
+#get directory information
+script_directory = os.path.dirname(__file__)
+example_data_dir = os.path.join(script_directory, "example_data")
+
 #Initialize all 257 file pairs
 file_pairs = []
-files = os.listdir("example_data/") #relative path to data
+files = os.listdir(example_data_dir) #relative path to data
 
 # Filter files that match the pattern "I04_date_time.tif" or "I05_date_time.tif"
 i04_files = [file for file in files if file.startswith("I04_")]
