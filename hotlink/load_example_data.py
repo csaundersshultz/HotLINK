@@ -14,7 +14,7 @@ from datetime import datetime
 
 
 #get directory information
-script_directory = os.path.dirname(__file__)
+script_directory = os.path.dirname(hotlink.__file__)
 example_data_dir = os.path.join(script_directory, "example_data")
 
 #Initialize all 257 file pairs
