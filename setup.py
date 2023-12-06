@@ -16,8 +16,8 @@ setup(
     	'ephem',
     	'scipy',
     	'scikit-image',
-    	'Pillow'
-    	'tensorflow'
+    	'Pillow',
+    	'tensorflow',
     ],
     include_package_data=True,
     zip_safe=False,
