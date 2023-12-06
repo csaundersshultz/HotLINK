@@ -19,8 +19,9 @@ def load_hotlink_model():
 	"""
 	#get the path to the model directory
 	script_directory = os.path.dirname(os.path.realpath(__file__))
+	model_directory = os.path.join(script_directory, "hotlink_model")
 
 	#load the model
-	hotlink_model = load_model( os.path.join(script_directory, "hotlink_model") )
+	hotlink_model = load_model( model_directory )
 
 	return hotlink_model
