@@ -39,7 +39,7 @@ def normalize(img, min_rad, max_rad, fill_nan=True):
     #fill missing values
     if fill_nan == True:
         min_observed = np.nanmin(img) # Find the minimum observed value
-        img[np.isnan(array)] = min_observed # Replace missing values with the minimum non-missing value
+        img[np.isnan(img)] = min_observed # Replace missing values with the minimum non-missing value
 
     normalized = (img - min_rad) / (max_rad - min_rad+0.00000001) #add infinitesimal to avoid divide by zero
     return normalized
