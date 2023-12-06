@@ -40,7 +40,7 @@ def load_example_data(num):
 
 	"""
 	files = file_pairs[num]
-	mir = np.array( open(files[0]))
-	tir = np.array( open(files[1]))
-	date = datetime.strptime( files[0].lstrip('I04_').rstrip('_shis.tif') )
+	mir = np.array( open( os.path.join(example_data_dir, files[0]) ) )
+	tir = np.array( open( os.path.join(example_data_dir, files[1]) ) )
+	date = datetime.strptime( files[0].lstrip('I04_').rstrip('_shis.tif'), "%Y%m%d_%H%M%S" )
 	return mir, tir, date
