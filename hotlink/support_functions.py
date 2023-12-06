@@ -37,7 +37,7 @@ def normalize(img, min_rad, max_rad, fill_nan=True):
     img = np.array(img) #convert to np array
 
     #fill missing values
-    if fill_nan = True:
+    if fill_nan == True:
         min_observed = np.nanmin(img) # Find the minimum observed value
         img[np.isnan(array)] = min_observed # Replace missing values with the minimum non-missing value
 
@@ -55,6 +55,28 @@ def normalize_TIR(img, fill_nan=True):
     Normalizes TIR images (array-like), to the viirs sensor min and max values
     """
     return normalize(img, min_rad=VIIRS_MIR_MIN_RAD, max_rad=VIIRS_MIR_MAX_RAD, fill_nan=fill_nan)
+
+def crop_center(img, size=64):
+    """
+    Function to crop images to the center.
+    Shape can be either [width, height], or [width, height, bands].
+    """
+    img = np.array(img)
+
+    # Determine center for each dimension
+    center_x = img.shape[0] // 2
+    center_y = img.shape[1] // 2
+
+    # Calculate the lower and upper bounds for cropping
+    lb_x = center_x - (size // 2)
+    hb_x = center_x + (size // 2)
+    lb_y = center_y - (size // 2)
+    hb_y = center_y + (size // 2)
+
+    # Crop the image
+    cropped = img[lb_x:hb_x, lb_y:hb_y]
+
+    return cropped
 
 
 """
