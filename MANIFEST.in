@@ -1,3 +1,2 @@
-#graft hotlink
 include hotlink/example_data/*.tif
-include hotlink/hotlink_model/*
+recursive-include hotlink/hotlink_model/*

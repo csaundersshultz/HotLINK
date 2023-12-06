@@ -17,6 +17,7 @@ setup(
     	'scipy',
     	'scikit-image',
     	'Pillow'
+    	'tensorflow'
     ],
     include_package_data=True,
     zip_safe=False,
