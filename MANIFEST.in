@@ -1,1 +1,2 @@
 graft hotlink
+include hotlink/example_data/*.tif
