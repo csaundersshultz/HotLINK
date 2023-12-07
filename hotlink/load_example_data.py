@@ -30,51 +30,51 @@ i05_files.sort()
 
 # Iterate through the sorted files and create pairs
 for i04_file, i05_file in zip(i04_files, i05_files):
-	file_pairs.append([i04_file, i05_file])
+    file_pairs.append([i04_file, i05_file])
 
 
 def load_example_data(num):
-	"""
-	Open MIR and TIR example files, numbered 0-256.
+    """
+    Open MIR and TIR example files, numbered 0-256.
 
-	Parameters:
-	- num: Index of the file pair to load (0-256).
+    Parameters:
+    - num: Index of the file pair to load (0-256).
 
-	Returns:
-	- mir: NumPy array representing MIR data.
-	- tir: NumPy array representing TIR data.
-	- date: Datetime object representing the date and time of the files.
-	"""
+    Returns:
+    - mir: NumPy array representing MIR data.
+    - tir: NumPy array representing TIR data.
+    - date: Datetime object representing the date and time of the files.
+    """
 
-	if not (0 <= num <= 256):
-		raise ValueError("Input 'num' must be in the range 0-256.")
+    if not (0 <= num <= 256):
+        raise ValueError("Input 'num' must be in the range 0-256.")
 
-	files = file_pairs[num]
-	mir = np.array(open(os.path.join(example_data_dir, files[0])))
-	tir = np.array(open(os.path.join(example_data_dir, files[1])))
-	date = datetime.strptime(files[0].lstrip('I04_').rstrip('_shis.tif'), "%Y%m%d_%H%M%S")
-	
-	return mir, tir, date
+    files = file_pairs[num]
+    mir = np.array(open(os.path.join(example_data_dir, files[0])))
+    tir = np.array(open(os.path.join(example_data_dir, files[1])))
+    date = datetime.strptime(files[0].lstrip('I04_').rstrip('_shis.tif'), "%Y%m%d_%H%M%S")
+    
+    return mir, tir, date
 
 
 def load_entire_dataset():
-	"""
-	Load the entire dataset of 256 image pairs.
+    """
+    Load the entire dataset of 256 image pairs.
 
-	Returns:
-	- dataset: NumPy array representing the dataset with shape (256, 64, 64, 2).
-	- dates: List of datetime objects representing the date and time of each file pair.
-	"""
+    Returns:
+    - dataset: NumPy array representing the dataset with shape (256, 64, 64, 2).
+    - dates: List of datetime objects representing the date and time of each file pair.
+    """
 
-	dataset = []
-	dates = []
+    dataset = []
+    dates = []
 
-	for num in range(256):
-		mir, tir, date = load_example_data(num)
-		dataset.append(np.stack([mir, tir], axis=-1))
-		dates.append(date)
+    for num in range(256):
+        mir, tir, date = load_example_data(num)
+        dataset.append(np.stack([mir, tir], axis=-1))
+        dates.append(date)
 
-	return np.array(dataset, dtype=np.float32), dates
+    return np.array(dataset, dtype=np.float32), dates
 
 
 
