@@ -11,7 +11,7 @@ from tensorflow.keras.models import load_model
 import os
 
 def load_hotlink_model(**kwargs):
-     """
+    """
     Function loads the hotlink model as a tensorflow.model object
     some model functions are: predict, fit (to fine-tune), etc.
     input to the model has shape [X, 64, 64, 2], where X is the number of input images,
