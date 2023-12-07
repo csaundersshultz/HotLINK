@@ -85,7 +85,7 @@ def normalize_TIR(img, fill_nan=True):
     Returns:
     - normalized: Normalized MIR image array.
     """
-    return normalize(img, min_rad=VIIRS_MIR_MIN_RAD, max_rad=VIIRS_MIR_MAX_RAD, fill_nan=fill_nan)
+    return normalize(img, min_rad=VIIRS_TIR_MIN_RAD, max_rad=VIIRS_TIR_MAX_RAD, fill_nan=fill_nan)
 
 def crop_center(img, size=64):
     """
