@@ -12,7 +12,8 @@ from math import sqrt
 import ephem
 from scipy.ndimage import generate_binary_structure
 from skimage.morphology import dilation
-from skimage.measure import label, regionprops
+from skimage.measure import label, regionprops, find_contours
+from skimage.transform import rescale
 
 
 
@@ -183,7 +184,6 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
 
 
 
-# Constants for calculating brightness temperature
 h = 6.626e-34  # Planck's constant, Joules*Seconds
 c = 2.99e+8    # Speed of light, meters/second
 k = 1.38e-23   # Boltzmann constant, Joules/Kelvin
@@ -197,7 +197,7 @@ def brightness_temperature(L, wl=3.74e-6):
     - wl: Central wavelength of the band, in METERS (not micrometers). Default is 3.74e-6.
 
     Returns:
-    - BT: Calculated brightness temperature.
+    - BT: Calculated brightness temperature, in Kelvin
 
     Notes:
     - The function uses Planck's law to convert radiance values to brightness temperature.
@@ -207,24 +207,64 @@ def brightness_temperature(L, wl=3.74e-6):
     """
     K2 = (h * c) / (wl * k)
     K1 = (2.0 * h * (c**2)) / (wl**5)
-    BT = K2 / (np.log(1 + (K1 / L)))
+    BT = K2 / (np.log1p(K1 / L)) # Use np.log1p to avoid issues with K1/L close to zero
 
-    return BT
+    return BT# Constants for calculating brightness temperature
 
-def generate_detection_figure():
+
+def plot_detection(radiance_image, mask, 
+                           title='', save_filename=None, 
+                           cmap='viridis', outline_color='red', outline_thickness=1):
     """
-    function to generate annotated figures of hotspot detections
-    and optionally save as png?
+    Display a radiance image with highlighted hotspots using a binary mask.
+
+    Parameters:
+    - radiance_image (numpy.ndarray): Input radiance image.
+    - mask (numpy.ndarray): Binary mask indicating the location of hotspots (same size as radiance_image).
+    - title (str): Title for the plot.
+    - save_filename (str): Filename to save the plot as a PNG. If None, the plot is not saved.
+    - cmap (str): Colormap for displaying the radiance image. Default is 'viridis'.
+    - outline_color (str): Color for highlighting hotspots. Default is 'red'.
+    - outline_thickness (int): Thickness of the outline for highlighting. Default is 1.
+
+    Notes:
+    - The function resizes the input images to force contours to surround the pixels
+    - Use this function to visualize radiance images with highlighted hotspots based on a binary mask.
     """
-    pass
+    # Resize the images
+    radiance_image_resized = rescale(radiance_image, 10, order=0)
+    mask_resized = rescale(mask, 10, order=0)
+
+    # Create a subplot
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+
+    # Display the resized radiance image with specified colormap and interpolation
+    im = ax.imshow(radiance_image_resized, cmap=cmap, interpolation='none')
+    plt.colorbar(im, shrink=0.8, label="MIR radiance")
+
+    # Find contours in the resized mask
+    contours = find_contours(mask_resized, level=0.5)
+
+    # Plot contours on the image
+    for contour in contours:
+        ax.plot(contour[:, 1], contour[:, 0], linewidth=outline_thickness, color=outline_color)
+
+    # Configure plot properties
+    ax.axis('off')
+    ax.set_title(title)
+
+    # Save the plot as a PNG if a filename is provided
+    if save_filename:
+        plt.savefig(save_filename, bbox_inches='tight', pad_inches=0.1, dpi=300)
+
+    # Display the plot
+    plt.show()
+
 
 
 """
 Miscellaneous support functions
 """
-
-import ephem
-import numpy as np
 
 def get_dn(datetime, volcano_lat, volcano_lng, volcano_elevation, twilight='CIVIL'):
     """
