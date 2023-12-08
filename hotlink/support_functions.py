@@ -89,37 +89,36 @@ def normalize_TIR(img, fill_nan=True):
     """
     return normalize(img, min_rad=VIIRS_TIR_MIN_RAD, max_rad=VIIRS_TIR_MAX_RAD, fill_nan=fill_nan)
 
-def crop_center(img, size=64):
+def crop_center(img, size=64, crop_dimensions=(0, 1)):
     """
     Crop images to the center.
 
     Parameters:
     - img: Input image array to be cropped.
     - size: Size of the cropped region. Default is 64.
+    - crop_dimensions: Tuple of dimensions to crop. Default is (0, 1).
 
     Returns:
     - cropped: Cropped image array.
 
     Notes:
-    - The input image array can have shapes [width, height], or [width, height, bands].
-    - The function calculates the center for each dimension and then determines the lower and upper bounds for cropping.
-    - The resulting cropped image has dimensions [size, size] or [size, size, bands].
+    - The input image array can have shapes [width, height], [width, height, bands], or [batch_size, width, height, channels].
+    - The function calculates the center for each specified dimension and then determines the lower and upper bounds for cropping.
+    - The resulting cropped image has dimensions [size, size] or [size, size, bands] or [batch_size, size, size, channels].
     """
 
     img = np.array(img)
 
-    # Determine center for each dimension
-    center_x = img.shape[0] // 2
-    center_y = img.shape[1] // 2
+    # Initialize slices for cropping
+    slices = [slice(None)] * img.ndim
 
-    # Calculate the lower and upper bounds for cropping
-    lb_x = center_x - (size // 2)
-    hb_x = center_x + (size // 2)
-    lb_y = center_y - (size // 2)
-    hb_y = center_y + (size // 2)
+    # Determine center for each specified dimension and create slices
+    for dim in crop_dimensions:
+        center = img.shape[dim] // 2
+        slices[dim] = slice(center - (size // 2), center + (size // 2))
 
     # Crop the image
-    cropped = img[lb_x:hb_x, lb_y:hb_y]
+    cropped = img[tuple(slices)]
 
     return cropped
 
