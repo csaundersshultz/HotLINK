@@ -57,7 +57,7 @@ def load_example_data(num):
     return mir, tir, date
 
 
-def load_entire_dataset():
+def load_entire_example_dataset():
     """
     Load the entire dataset of 256 image pairs.
 
@@ -74,7 +74,9 @@ def load_entire_dataset():
         dataset.append(np.stack([mir, tir], axis=-1))
         dates.append(date)
 
-    return np.array(dataset, dtype=np.float32), dates
+    dataset = np.array(dataset, dtype=np.float32)
+
+    return dataset, dates
 
 
 

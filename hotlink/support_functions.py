@@ -14,6 +14,7 @@ from scipy.ndimage import generate_binary_structure
 from skimage.morphology import dilation
 from skimage.measure import label, regionprops, find_contours
 from skimage.transform import rescale
+import matplotlib.pyplot as plt
 
 
 
