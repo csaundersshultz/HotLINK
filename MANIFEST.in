@@ -1,4 +1,4 @@
 include hotlink/example_data/*.tif
 include hotlink/hotlink_model/*.pb
 include hotlink/hotlink_model/variables/*
-include hotlink/hotlink_model/assets/*
+include hotlink/hotlink_model/assets/
