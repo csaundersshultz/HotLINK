@@ -25,10 +25,18 @@ def load_hotlink_model(**kwargs):
     """
 
     #get the path to the model directory
-    script_directory = os.path.dirname(os.path.realpath(__file__))
+    #script_directory = os.path.dirname(os.path.realpath(__file__))
+
+    # Get the path to the script
+    script_path = os.path.abspath(__file__) ##updated to use abspath, instead of realpath
+
+    # Get the directory containing the script
+    script_directory = os.path.dirname(script_path)
+
+    # Construct the path to the model directory
     model_directory = os.path.join(script_directory, "hotlink_model")
 
-    #load the model
-    hotlink_model = load_model( model_directory, **kwargs)
+    # Load the model
+    hotlink_model = load_model(model_directory, **kwargs)
 
     return hotlink_model
