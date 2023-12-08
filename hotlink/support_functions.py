@@ -214,6 +214,7 @@ def brightness_temperature(L, wl=3.74e-6):
 
 def plot_detection(radiance_image, mask, 
                            title='', save_filename=None, 
+                           figsize=(4,4), dpi=150,
                            cmap='viridis', outline_color='red', outline_thickness=1):
     """
     Display a radiance image with highlighted hotspots using a binary mask.
@@ -236,7 +237,7 @@ def plot_detection(radiance_image, mask,
     mask_resized = rescale(mask, 10, order=0)
 
     # Create a subplot
-    fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+    fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
     # Display the resized radiance image with specified colormap and interpolation
     im = ax.imshow(radiance_image_resized, cmap=cmap, interpolation='none')
