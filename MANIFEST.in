@@ -1,2 +1,2 @@
 include hotlink/example_data/*.tif
-recursive-include hotlink/hotlink_model/*
+include hotlink/hotlink_model/*.pb
