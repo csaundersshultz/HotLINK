@@ -183,7 +183,7 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
     return totalrp
 
 
-
+# Constants for calculating brightness temperature
 h = 6.626e-34  # Planck's constant, Joules*Seconds
 c = 2.99e+8    # Speed of light, meters/second
 k = 1.38e-23   # Boltzmann constant, Joules/Kelvin
@@ -207,9 +207,10 @@ def brightness_temperature(L, wl=3.74e-6):
     """
     K2 = (h * c) / (wl * k)
     K1 = (2.0 * h * (c**2)) / (wl**5)
-    BT = K2 / (np.log1p(K1 / L)) # Use np.log1p to avoid issues with K1/L close to zero
+    BT = K2 / (np.log1p(K1 / L)) # Use np.log1p to avoid issues with K1/L close to zero, equivalent to np.log(1 + (K1/L))
 
-    return BT# Constants for calculating brightness temperature
+
+    return BT
 
 
 def plot_detection(radiance_image, mask, 
