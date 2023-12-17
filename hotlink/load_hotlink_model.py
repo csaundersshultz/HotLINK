@@ -28,7 +28,7 @@ def load_hotlink_model(**kwargs):
     #script_directory = os.path.dirname(os.path.realpath(__file__))
 
     # Get the path to the script
-    script_path = os.path.realpath(__file__) ##updated to use abspath, instead of realpath
+    script_path = os.path.realpath(__file__)
 
     # Get the directory containing the script
     script_directory = os.path.dirname(script_path)
