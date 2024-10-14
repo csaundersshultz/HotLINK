@@ -17,7 +17,7 @@ setup(
     	'scipy',
     	'scikit-image',
     	'Pillow',
-    	'tensorflow',
+    	'tensorflow==2.8',
     	'matplotlib',
     ],
     include_package_data=True,
