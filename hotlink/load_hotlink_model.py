@@ -10,6 +10,7 @@ function to load the hotlink model
 from tensorflow.keras.models import load_model
 import os
 
+
 def load_hotlink_model(**kwargs):
     """
     Function loads the hotlink model as a tensorflow.model object
@@ -24,19 +25,34 @@ def load_hotlink_model(**kwargs):
     - hotlink_model: Loaded TensorFlow model.
     """
 
-    #get the path to the model directory
-    #script_directory = os.path.dirname(os.path.realpath(__file__))
+    # get the path to the model directory
+    # script_directory = os.path.dirname(os.path.realpath(__file__))
+    try:
 
-    # Get the path to the script
-    script_path = os.path.realpath(__file__)
+        # Get the path to the script
+        script_path = os.path.realpath(__file__)
 
-    # Get the directory containing the script
-    script_directory = os.path.dirname(script_path)
+        # Get the directory containing the script
+        script_directory = os.path.dirname(script_path)
 
-    # Construct the path to the model directory
-    model_directory = os.path.join(script_directory, "hotlink_model")
+        # Construct the path to the model directory
+        model_directory = os.path.join(script_directory, "hotlink_model_new")
+        model_path = os.path.join(model_directory, "hotlink.keras")
+        # Load the model
+        hotlink_model = load_model(model_path, **kwargs)
+    except:
+        print("Loading .keras file failed, trying to load SavedModel format")
+        print("Check your tensorflow version... sorry idk")
+        # Get the path to the script
+        script_path = os.path.realpath(__file__)
 
-    # Load the model
-    hotlink_model = load_model(model_directory, **kwargs)
+        # Get the directory containing the script
+        script_directory = os.path.dirname(script_path)
+
+        # Construct the path to the model directory
+        model_directory = os.path.join(script_directory, "hotlink_model")
+
+        # Load the model
+        hotlink_model = load_model(model_directory, **kwargs)
 
     return hotlink_model
