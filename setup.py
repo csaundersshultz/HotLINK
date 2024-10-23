@@ -1,26 +1,25 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='hotlink',
-    version='0.1',
-    url='https://github.com/csaundersshultz/HotLINK',
-    author='Pablo Saunders-Shultz',
-    author_email='csaundersshultz@gmail.com',
-    license='MIT',
-    description='An example of a python package from pre-existing code',
+    name="hotlink",
+    version="0.1",
+    url="https://github.com/csaundersshultz/HotLINK",
+    author="Pablo Saunders-Shultz",
+    author_email="csaundersshultz@gmail.com",
+    license="MIT",
+    description="An example of a python package from pre-existing code",
     packages=find_packages(),
     install_requires=[
-    	# DEPENDENCIES
-    	'numpy',
-    	'pandas',
-    	'ephem',
-    	'scipy',
-    	'scikit-image',
-    	'Pillow',
-    	'tensorflow==2.8',
-    	'matplotlib',
+        # DEPENDENCIES
+        "numpy",
+        "pandas",
+        "ephem",
+        "scipy",
+        "scikit-image",
+        "Pillow",
+        "tensorflow==2.17",
+        "matplotlib",
     ],
     include_package_data=True,
     zip_safe=False,
-
 )
