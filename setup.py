@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="hotlink",
-    version="0.1",
+    version="1.2",
     url="https://github.com/csaundersshultz/HotLINK",
     author="Pablo Saunders-Shultz",
     author_email="csaundersshultz@gmail.com",
