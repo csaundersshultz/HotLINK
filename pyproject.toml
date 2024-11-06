@@ -17,6 +17,17 @@ authors = [
 dependencies = [
     "numpy",
     "pandas",
+    "ephem",
+    "earthaccess",
+    "pyresample",
+    "scipy",
+    "scikit-image",
+    "Pillow",
+    "tensorflow==2.8",
+    "matplotlib",
+    "satpy['modis_1b']",
+    "satpy['viirs_1b']",
+    "utm"
 ]
 
 [project.urls]
