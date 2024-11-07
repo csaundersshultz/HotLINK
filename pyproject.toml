@@ -10,6 +10,7 @@ name = "hotlink"
 version = "1.3"
 description = "the HOTspot Learning and Identification NetworK"
 readme = "README.md"
+requires-python = "<=3.10"
 authors = [
     {name = "Pablo Saunders-Shultz", email = "csaundersshultz@gmail.com"},
     {name = "Mario Fernando Angarita Vargas", email = "mfangaritasr@alaska.edu"}
@@ -25,10 +26,13 @@ dependencies = [
     "Pillow",
     "tensorflow==2.8",
     "matplotlib",
-    "satpy['modis_1b']",
-    "satpy['viirs_1b']",
+    "satpy[modis_l1b]",
+    "satpy[viirs_l1b]",
     "utm"
 ]
+
+[tool.setuptools]
+py-modules = []
 
 [project.urls]
 documentation = "https://github.com/csaundersshultz/HotLINK"
