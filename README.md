@@ -1,7 +1,7 @@
 # HotLINK – The Hotspot Learning and Identification Network
 
 Author: Pablo Saunders-Shultz <csaundersshultz@gmail.com>
-
+Contributors: Mario Fernando Angarita Vargas <mfangaritasr@alaska.edu>
 
 ## Overview
 HotLINK is a deep learning model built in tensorflow, trained to detect volcanic thermal hotspots in VIIRS infrared imagery. A manuscript describing HotLINK in detail is still in review. 
