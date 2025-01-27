@@ -37,7 +37,7 @@ def load_hotlink_model(**kwargs):
 
         # Construct the path to the model directory
         model_directory = os.path.join(script_directory, "hotlink_model_new")
-        model_path = os.path.join(model_directory, "hotlink.keras")
+        model_path = os.path.join(model_directory, "hotlink_tf2.15.keras")
         # Load the model
         hotlink_model = load_model(model_path, **kwargs)
     except:

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="hotlink",
-    version="1.1",
+    version="1.3",
     url="https://github.com/csaundersshultz/HotLINK",
     author="Pablo Saunders-Shultz",
     author_email="csaundersshultz@gmail.com",
@@ -17,7 +17,7 @@ setup(
         "scipy",
         "scikit-image",
         "Pillow",
-        "tensorflow==2.8",
+        "tensorflow==2.15",
         "matplotlib",
     ],
     include_package_data=True,
