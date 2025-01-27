@@ -18,7 +18,7 @@ setup(
         "scikit-image",
         "Pillow",
         "tensorflow==2.15",
-        "keras==2.10"
+        "keras==2.10",
         "matplotlib",
     ],
     include_package_data=True,
