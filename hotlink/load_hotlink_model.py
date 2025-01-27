@@ -26,29 +26,18 @@ def load_hotlink_model(**kwargs):
     """
 
     # get the path to the model directory
-    # script_directory = os.path.dirname(os.path.realpath(__file__))
+    script_directory = os.path.dirname(os.path.realpath(__file__))
+    print('hello')
     try:
-
-        # Get the path to the script
-        script_path = os.path.realpath(__file__)
-
-        # Get the directory containing the script
-        script_directory = os.path.dirname(script_path)
-
         # Construct the path to the model directory
         model_directory = os.path.join(script_directory, "hotlink_model_new")
-        model_path = os.path.join(model_directory, "hotlink_tf2.15.keras")
+        model_path = os.path.join(model_directory, "hotlink_tf2.14.keras")
         # Load the model
         print(f'Trying to load model from: {model_path}')
         hotlink_model = load_model(model_path, **kwargs)
         print("Keras model loading successful!")
     except:
         print("Loading .keras model failed, trying to load SavedModel format")
-        # Get the path to the script
-        script_path = os.path.realpath(__file__)
-
-        # Get the directory containing the script
-        script_directory = os.path.dirname(script_path)
 
         # Construct the path to the model directory
         model_directory = os.path.join(script_directory, "hotlink_model")
