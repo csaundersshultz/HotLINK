@@ -2,7 +2,7 @@ name: hotlink-test
 channels:
   - conda-forge
 dependencies:
-  - python>=3.8
+  - python>=3.10
   - numpy
   - pandas
   - earthaccess
@@ -11,7 +11,7 @@ dependencies:
   - scikit-image
   - Pillow
   - pyresample
-  - tensorflow==2.8
+  - tensorflow==2.15
   - matplotlib
   - utm
   - satpy['modis_1b']

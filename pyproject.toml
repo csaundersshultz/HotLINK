@@ -10,7 +10,7 @@ name = "hotlink"
 version = "1.3"
 description = "the HOTspot Learning and Identification NetworK"
 readme = "README.md"
-requires-python = "<3.11"
+requires-python = ">=3.10"
 authors = [
     {name = "Pablo Saunders-Shultz", email = "csaundersshultz@gmail.com"},
     {name = "Mario Fernando Angarita Vargas", email = "mfangaritasr@alaska.edu"}
@@ -24,7 +24,7 @@ dependencies = [
     "scipy",
     "scikit-image",
     "Pillow",
-    "tensorflow==2.8",
+    "tensorflow==2.15",
     "matplotlib",
     "satpy[modis_l1b]",
     "satpy[viirs_l1b]",
