@@ -11,7 +11,7 @@ dependencies:
   - scikit-image
   - Pillow
   - pyresample
-  - tensorflow==2.15
+  - tensorflow==2.14
   - matplotlib
   - utm
   - satpy['modis_1b']

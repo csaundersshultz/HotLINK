@@ -24,7 +24,7 @@ dependencies = [
     "scipy",
     "scikit-image",
     "Pillow",
-    "tensorflow==2.15",
+    "tensorflow==2.14",
     "matplotlib",
     "satpy[modis_l1b]",
     "satpy[viirs_l1b]",
