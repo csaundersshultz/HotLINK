@@ -53,7 +53,7 @@ def make_query(dates,bounding_box,sat='modis'):
                         temporal=dates
                     )
     elif sat=='viirs':
-        
+
         for i in range(len(names)):
             try:
                 results += earthaccess.search_data(
@@ -75,6 +75,9 @@ def make_query(dates,bounding_box,sat='modis'):
                 pass
     return results, results1
 
+class AuthenticationError(Exception):
+    pass
+
 def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
@@ -83,55 +86,60 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
 
     if sat in ['viirsj1','viirsj2','viirsn']:
         sat='viirs'
-        
+
     area=area_definition('name',vent,sat)
-       
+
     cwd=os.getcwd()
-    
+
     num_results = len(results)
     batches = math.ceil(num_results / batchsize)
-    num = min(num_results + 1, batchsize)
-    
+    num = min(num_results + 1, batchsize) # number of images per batch
+    threads = min(5, num) # Don't try for more than 5 threads.
+
     dest = pathlib.Path(folder)
-        
+
     for k in range(batches):
-        earthaccess.login(persist=True)
+        auth = earthaccess.login(persist=True)
+        if not auth.authenticated:
+            print("Authentication to earthaccess failed. Unable to download.")
+            raise AuthenticationError("Unable to authenticate")
+
         try:
-            print(f'Downloading MIR/Combined files ({k}/{batches})')
-            earthaccess.download(results[num*k:num*k+num], folder, threads=5)
+            print(f'Downloading MIR/Combined files (batch {k}/{batches})')
+            earthaccess.download(results[num*k:num*k+num], folder, threads=threads)
         except Exception as e:
             print('Downloading Error')
             print(e)
             print('Trying again with 1 thread')
             earthaccess.download(results[num*k:num*k+num], folder, threads=1)
-            
+
         if sat=='viirs':
             try:
-                print('Downloading VIIRS TIR files ({k}/{batches})')
+                print(f'Downloading VIIRS TIR files (batch {k}/{batches})')
                 earthaccess.download(results1[num*k:num*k+num], folder, threads=num)
             except Exception as e:
                 print('Download error on VIIRS TIR')
                 print(e)
                 print('Trying again with 1 thread')
                 earthaccess.download(results1[num*k:num*k+num], folder, threads=1)
-                
-                
+
+
         if sat=='viirs':
             ars2=sorted(dest.glob('VNP02*'))
             ars2+=sorted(dest.glob('VJ102*'))
             ars2+=sorted(dest.glob('VJ202*'))
-            
+
             ars3=sorted(dest.glob('VNP03*'))
             ars3+=sorted(dest.glob('VJ103*'))
             ars3+=sorted(dest.glob('VJ203*'))
         else:
             ars2=dest.glob('MOD0*')
-            ars2+=dest.glob('MYD0*')           
-            
-            
+            ars2+=dest.glob('MYD0*')
+
+
         for i in range(len(ars2)):
             os.chdir(cwd)
-            
+
             files=[ars2[i]]
             reader = 'modis_l1b'
             if sat=='viirs':
@@ -142,7 +150,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
             img_date = datetime.strptime(".".join(name_parts[1:3]), 'A%Y%j.%H%M')
             try:
                 scn=Scene(reader=reader,filenames=[str(f.absolute()) for f in files])
-                
+
                 if sat=='viirs':
                     scn.load(['I04','I05'],calibration='radiance')
                     try:
@@ -151,7 +159,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         file, file1 = files
                         print('Retrying',str(file),str(file1))
                         file.unlink()
-                        file1.unlink()                        
+                        file1.unlink()
                         filename=file.name
                         link=results[0].data_links()[0].split(filename.split('.')[0])[0]
                         link+=filename.split('.')[0]+'/'+filename
@@ -160,13 +168,13 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         link1=results1[0].data_links()[0].split(filename1.split('.')[0])[0]
                         link1+=filename1.split('.')[0]+'/'+filename1
                         subprocess.call('wget -P '+folder+' '+link1,shell=True)
-                        
+
                         scn=Scene(reader='viirs_l1b',filenames=[str(file.absolute()),str(file1.absolute())])
                         scn.load(['I04','I05'],calibration='radiance')
                         cropscn = scn.resample(destination=area, datasets=['I04','I05'])
                     mir = cropscn['I04'].values
                     tir = cropscn['I05'].values
-                        
+
                 else:
                     scn.load(['21','32'],calibration='radiance')
                     try:
@@ -175,7 +183,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         file = files[0]
                         file.unlink()
                         filename=file.name
-                
+
                         link=results[0].data_links()[0].split(filename.split('.')[0])[0]
                         link+=filename.split('.')[0]+'/'+filename
                         subprocess.call('wget -P '+folder+' '+link,shell=True)
@@ -183,21 +191,22 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         scn.load(['21','32'],calibration='radiance')
                         cropscn = scn.resample(destination=area, datasets=['21','32'])
                     mir = cropscn['21'].values
-                    tir = cropscn['32'].values            
-                
+                    tir = cropscn['32'].values
+
                 # Fill missing values
-                min_mir_observered = np.nanmin(mir)                
+                min_mir_observered = np.nanmin(mir)
                 min_tir_observered = np.nanmin(tir)
                 mir[np.isnan(mir)] = min_mir_observered
                 tir[np.isnan(tir)] = min_tir_observered
-                
+
                 data=np.ones((70,70,2))*np.nan
                 data[:,:,0]=mir
                 data[:,:,1]=tir
 
                 np.save(folder+'/'+img_date.strftime('%Y%m%d_%H%M.npy'),data)
-            except:
-                print(f"Unable to process {file}. Skipping")
+            except Exception as e:
+                print(f"Unable to process {files[0]}. Skipping")
+                print(e)
             finally:
                 for file in files:
                     file.unlink()
