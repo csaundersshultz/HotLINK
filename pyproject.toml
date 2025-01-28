@@ -10,7 +10,7 @@ name = "hotlink"
 version = "1.4"
 description = "the HOTspot Learning and Identification NetworK"
 readme = "README.md"
-requires-python = ">= 3.10"
+requires-python = ">= 3.8"
 authors = [
     {name = "Pablo Saunders-Shultz", email = "csaundersshultz@gmail.com"},
     {name = "Mario Fernando Angarita Vargas", email = "mfangaritasr@alaska.edu"}
@@ -32,6 +32,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
+packages = ['find']
 py-modules = []
 
 [project.urls]
