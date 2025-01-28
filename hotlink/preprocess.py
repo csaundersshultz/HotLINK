@@ -106,22 +106,22 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
 
         try:
             print(f'Downloading MIR/Combined files (batch {k}/{batches})')
-            earthaccess.download(results[num*k:num*k+num], folder, threads=threads)
+            earthaccess.download(results[num*k:num*k+num], str(dest), threads=threads)
         except Exception as e:
             print('Downloading Error')
             print(e)
             print('Trying again with 1 thread')
-            earthaccess.download(results[num*k:num*k+num], folder, threads=1)
+            earthaccess.download(results[num*k:num*k+num], str(dest), threads=1)
 
         if sat=='viirs':
             try:
                 print(f'Downloading VIIRS TIR files (batch {k}/{batches})')
-                earthaccess.download(results1[num*k:num*k+num], folder, threads=num)
+                earthaccess.download(results1[num*k:num*k+num], str(dest), threads=num)
             except Exception as e:
                 print('Download error on VIIRS TIR')
                 print(e)
                 print('Trying again with 1 thread')
-                earthaccess.download(results1[num*k:num*k+num], folder, threads=1)
+                earthaccess.download(results1[num*k:num*k+num], str(dest), threads=1)
 
 
         if sat=='viirs':
@@ -163,11 +163,11 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         filename=file.name
                         link=results[0].data_links()[0].split(filename.split('.')[0])[0]
                         link+=filename.split('.')[0]+'/'+filename
-                        subprocess.call('wget -P '+folder+' '+link,shell=True)
+                        subprocess.call('wget -P '+str(dest)+' '+link,shell=True)
                         filename1=file1.name
                         link1=results1[0].data_links()[0].split(filename1.split('.')[0])[0]
                         link1+=filename1.split('.')[0]+'/'+filename1
-                        subprocess.call('wget -P '+folder+' '+link1,shell=True)
+                        subprocess.call('wget -P '+str(dest)+' '+link1,shell=True)
 
                         scn=Scene(reader='viirs_l1b',filenames=[str(file.absolute()),str(file1.absolute())])
                         scn.load(['I04','I05'],calibration='radiance')
@@ -186,7 +186,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
 
                         link=results[0].data_links()[0].split(filename.split('.')[0])[0]
                         link+=filename.split('.')[0]+'/'+filename
-                        subprocess.call('wget -P '+folder+' '+link,shell=True)
+                        subprocess.call('wget -P '+str(dest)+' '+link,shell=True)
                         scn=Scene(reader='modis_l1b',filenames=[str(file.absolute())])
                         scn.load(['21','32'],calibration='radiance')
                         cropscn = scn.resample(destination=area, datasets=['21','32'])
@@ -203,7 +203,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                 data[:,:,0]=mir
                 data[:,:,1]=tir
 
-                np.save(folder+'/'+img_date.strftime('%Y%m%d_%H%M.npy'),data)
+                np.save(dest / img_date.strftime('%Y%m%d_%H%M.npy'),data)
             except Exception as e:
                 print(f"Unable to process {files[0]}. Skipping")
                 print(e)
