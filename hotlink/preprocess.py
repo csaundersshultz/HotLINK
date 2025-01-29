@@ -172,8 +172,8 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         scn=Scene(reader='viirs_l1b',filenames=[str(file.absolute()),str(file1.absolute())])
                         scn.load(['I04','I05'],calibration='radiance')
                         cropscn = scn.resample(destination=area, datasets=['I04','I05'])
-                    mir = cropscn['I04'].values
-                    tir = cropscn['I05'].values
+                    mir = cropscn['I04'].to_numpy()
+                    tir = cropscn['I05'].to_numpy()
 
                 else:
                     scn.load(['21','32'],calibration='radiance')
@@ -190,8 +190,8 @@ def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
                         scn=Scene(reader='modis_l1b',filenames=[str(file.absolute())])
                         scn.load(['21','32'],calibration='radiance')
                         cropscn = scn.resample(destination=area, datasets=['21','32'])
-                    mir = cropscn['21'].values
-                    tir = cropscn['32'].values
+                    mir = cropscn['21'].to_numpy()
+                    tir = cropscn['32'].to_numpy()
 
                 # Fill missing values
                 min_mir_observered = np.nanmin(mir)
