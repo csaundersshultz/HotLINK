@@ -1,7 +1,9 @@
 import os
 import pathlib
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from functools import partial
 
 import numpy
 import pandas
@@ -24,7 +26,12 @@ def load_model():
     return model
 
 
-def process_image(mir, tir, image_date, vent, elevation, model):
+def process_image(vent, elevation, model, file):
+    image_date = datetime.strptime(file.stem, '%Y%m%d_%H%M')
+    data = numpy.load(file)
+    mir = data[:, :, 0].copy()
+    tir = data[:, :, 1].copy()
+
     n_mir = normalize_MIR(mir) #note, normalize also fills in missing pixels
     n_tir = normalize_TIR(tir)
     stacked = numpy.dstack([n_mir, n_tir])
@@ -67,6 +74,14 @@ def process_image(mir, tir, image_date, vent, elevation, model):
     hotspot_tir_bt = brightness_temperature(tir_hotspot, wl=3.74e-6)
     bg_tir_bt = brightness_temperature(tir_background, wl=3.74e-6)
 
+    try:
+        mir_max_hs_bt = hotspot_mir_bt.max()
+        tir_max_hs_bt = hotspot_tir_bt.max()
+    except ValueError:
+        # Handle the no detection case
+        mir_max_hs_bt = numpy.nan
+        tir_max_hs_bt = numpy.nan
+
     day_night = get_dn(image_date, vent[1], vent[0], elevation)
     sol_zenith, sol_azimuth = get_solar_coords(image_date, vent[1], vent[0], elevation)
 
@@ -77,15 +92,17 @@ def process_image(mir, tir, image_date, vent, elevation, model):
         'max_prob': max_prob,
         'mir_hotspot_bt': hotspot_mir_bt.mean(),
         'mir_background_bt': bg_mir_bt.mean(),
-        'mir_hotspot_max_bt': hotspot_mir_bt.max(),
+        'mir_hotspot_max_bt': mir_max_hs_bt,
         'tir_hotspot_bt': hotspot_tir_bt.mean(),
-        'tir_hotspot_max_bt': hotspot_tir_bt.max(),
+        'tir_hotspot_max_bt': tir_max_hs_bt,
         'tir_background_bt': bg_tir_bt.mean(),
         'num_hostspot_pixels': num_hotspot_pixels,
         'solar_zenith': sol_zenith,
         'solar_azimuth': sol_azimuth,
         'Pixels above 0.5 prob': prob_above_05,
     }
+
+    file.unlink()
 
     return result
 
@@ -131,15 +148,19 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
     - The function determines the volcano location based on the name or coordinates.
       If a name is provided, it searches for the volcano in the internal database.
       If coordinates are provided, it finds the nearest volcano to the given location.
-    - The function ensures the data directory exists and deletes intermediate image
-      files after processing.
-    - The HotLINK model is used to analyze the images, and additional metadata is
-      appended to the results.
 
     Examples
     --------
     >>> results = get_results(
     ...     vent="Shishaldin",
+    ...     elevation=2550,
+    ...     dates=("2019-01-01", "2019-12-31"),
+    ...     sensor="viirs"
+    ... )
+    >>> print(results)
+
+    >>> results = get_results(
+    ...     vent=(54.7554, -163.9711),
     ...     elevation=2550,
     ...     dates=("2019-01-01", "2019-12-31"),
     ...     sensor="viirs"
@@ -159,7 +180,7 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
         volcs.loc[:, 'dist'] = dists
         volc = volcs[volcs['dist']==volcs['dist'].min()]
 
-    print("Using volcano:", volc['name'])
+    print("Using volcano:", volc.iloc[0]['name'])
 
     data_path = pathlib.Path('./data')
 
@@ -167,6 +188,7 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
     os.makedirs(data_path, exist_ok = True)
 
     preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
+    print("Image files downloaded. Beginning processing")
 
     data_files = data_path.glob('*.npy')
 
@@ -174,21 +196,18 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
 
     results = []
 
-    # TODO: multi-thread/process?
-    for file in data_files:
-        image_date = datetime.strptime(file.stem, '%Y%m%d_%H%M')
-        data = numpy.load(file)
-        mir = data[:, :, 0].copy()
-        tir = data[:, :, 1].copy()
-
-        result = process_image(mir, tir, image_date, vent, elevation, model)
-
-        # Add some global properties
-        result['sensor'] = sensor
-        result['VolcanoID'] = volc['id']
-
-        results.append(result)
-        file.unlink()
+    # Using the thread pool here provides a very modest (~16% in my testing) speedup.
+    # It might not be worth the complexity for smaller image sets, but could help a bit with
+    # larger sets. ProcessPoolExecutor is horrible here, due to the need for
+    # every individual process to import/set up tensorflow, coupled with
+    # inter-process communications.
+    process_func = partial(process_image, vent, elevation, model)
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(process_func, data_files)
 
     results = pandas.DataFrame(results)
+    results['sensor'] = sensor
+    results['VolcanoID'] = volc.iloc[0]['id']
+    if len(results) > 0:
+        results = results.sort_values('date').reset_index(drop = True)
     return results
