@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ['find']
+packages = ['hotlink']
 py-modules = []
 
 [project.urls]
