@@ -20,10 +20,13 @@ def main():
     parser.add_argument("sensor", type=str, help="Sensor name")
 
     args = parser.parse_args()
-    dates = args.dates.split(",")
+    dates = tuple(args.dates.split(","))
     
     t1 = time.time()
     results = hotlink.get_results(args.vent, args.elevation, dates, args.sensor)
     results.to_csv('HotLINK Results.csv', index = False)
 
-    print(f"Calculated results in {time.time() - t1}")    
+    print(f"Calculated results in {time.time() - t1}")
+    
+if __name__ == "__main__":
+    main()
