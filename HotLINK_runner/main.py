@@ -7,7 +7,6 @@ from functools import partial
 
 import numpy
 import pandas
-import tensorflow
 
 from hotlink import preprocess
 from hotlink.support_functions import crop_center, radiative_power, brightness_temperature, get_dn, normalize_MIR, normalize_TIR, get_solar_coords
@@ -16,6 +15,8 @@ from skimage.filters import apply_hysteresis_threshold
 from . import utils
 
 def load_model():
+    import tensorflow
+    
     tensorflow_version = ".".join(tensorflow.__version__.split('.')[:2])
     script_directory = pathlib.Path(__file__).parent.absolute()
     # model_dir = script_directory / "hotlink" / "hotlink_model_new"
@@ -27,6 +28,7 @@ def load_model():
 
 
 def process_image(vent, elevation, model, file):
+    filename = file.name
     image_date = datetime.strptime(file.stem, '%Y%m%d_%H%M')
     data = numpy.load(file)
     mir = data[:, :, 0].copy()
@@ -82,13 +84,14 @@ def process_image(vent, elevation, model, file):
         mir_max_hs_bt = numpy.nan
         tir_max_hs_bt = numpy.nan
 
-    day_night = get_dn(image_date, vent[1], vent[0], elevation)
+#    day_night = get_dn(image_date, vent[1], vent[0], elevation)
     sol_zenith, sol_azimuth = get_solar_coords(image_date, vent[1], vent[0], elevation)
 
     result = {
+        'source file': filename,
         'date': image_date,
         'radiative_power': rp,
-        'day_night flag': day_night,
+#        'day_night flag': day_night,
         'max_prob': max_prob,
         'mir_hotspot_bt': hotspot_mir_bt.mean(),
         'mir_background_bt': bg_mir_bt.mean(),
@@ -187,10 +190,10 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
     # make sure the data directory exists
     os.makedirs(data_path, exist_ok = True)
 
-    preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
-    print("Image files downloaded. Beginning processing")
+    meta = preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
+    print("Image files processed. Beginning calculations")
 
-    data_files = data_path.glob('*.npy')
+    data_files = list(data_path.glob('*.npy'))
 
     model = load_model()
 
@@ -204,10 +207,19 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
     process_func = partial(process_image, vent, elevation, model)
     with ThreadPoolExecutor() as executor:
         results = executor.map(process_func, data_files)
-
+    
     results = pandas.DataFrame(results)
+    
+    # Add results that apply to all
     results['sensor'] = sensor
     results['VolcanoID'] = volc.iloc[0]['id']
+    
+    # pull in metadata retrieved during the download
+    meta_map = results['source file'].map(meta)
+    results = results.drop(columns=['source file'])    
+    results['satellite'] = meta_map.map(lambda x: x.get('satelite'))
+    results['dataURL'] = meta_map.map(lambda x: x.get('url'))
+    
     if len(results) > 0:
         results = results.sort_values('date').reset_index(drop = True)
     return results

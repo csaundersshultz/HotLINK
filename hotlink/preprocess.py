@@ -1,10 +1,15 @@
+import functools
 import math
 import pathlib
+import time
+import traceback
+import warnings
+
+from collections.abc import Sequence
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import earthaccess
 import numpy as np
-import os
-import subprocess
 import utm
 
 from datetime import datetime
@@ -27,186 +32,230 @@ def area_definition(area_id, lat_lon,sat='modis'):
 def make_query(dates,bounding_box,sat='modis'):
     if sat=='modis':
         names=['MOD021KM','MYD021KM']
+        names2 = []
     elif sat=='viirs':
-        names=['VJ102IMG','VJ202IMG','VNP02IMG']
-        names1=['VJ103IMG','VJ203IMG','VNP03IMG']
+        names = ['VJ102IMG','VJ202IMG','VNP02IMG']
+        names2 = ['VJ103IMG','VJ203IMG','VNP03IMG']
     elif sat=='viirsj2':
         names=['VJ202IMG']
-        names1=['VJ203IMG']
+        names2 = ['VJ203IMG']
         sat='viirs'
     elif sat=='viirsj1':
-        names=['VJ102IMG']
-        names1=['VJ103IMG']
+        names = ['VJ102IMG']
+        names2 = ['VJ103IMG']
         sat='viirs'
     elif sat=='viirsn':
         names=['VNP02IMG']
-        names1=['VNP03IMG']
+        names2 = ['VNP03IMG']
         sat='viirs'
 
     results=[]
-    results1=[]
-    if sat=='modis':
-        for name in names:
-            results += earthaccess.search_data(
-                        short_name=name,
-                        bounding_box=bounding_box,
-                        temporal=dates
-                    )
-    elif sat=='viirs':
+    results2 = []
 
-        for i in range(len(names)):
-            try:
-                results += earthaccess.search_data(
-                            short_name=names[i],
-                            bounding_box=bounding_box,
-                            temporal=dates
-                        )
-            except IndexError as e:
-                print('error',e)
-                pass
-            try:
-                results1 += earthaccess.search_data(
-                            short_name=names1[i],
-                            bounding_box=bounding_box,
-                            temporal=dates
-                        )
-            except IndexError as e:
-                print('error',e)
-                pass
-    return results, results1
+    for name in names:
+        results += earthaccess.search_data(
+                    short_name=name,
+                    bounding_box=bounding_box,
+                    temporal=dates
+                )
+        
+    for name in names2:
+        results2 += earthaccess.search_data(
+                    short_name=name,
+                    bounding_box=bounding_box,
+                    temporal=dates
+                )    
+    
+    return results, results2
 
 class AuthenticationError(Exception):
     pass
 
-def download_preprocess(dates,vent,sat='modis',batchsize=100,folder='./data'):
+
+def download_batch(results, batch, num, dest):
+    threads = min(8, num) # Don't try for more than 8 threads (the default).
+    to_download = results[num*batch:num*batch+num]
+        
+    auth = earthaccess.login(persist=True)
+    if not auth.authenticated:
+        print("Authentication to earthaccess failed. Unable to download.")
+        raise AuthenticationError("Unable to authenticate")
+
+    try:
+        print(f'Downloading files (batch {batch + 1})')
+        earthaccess.download(to_download, dest, threads=threads)
+    except Exception as e:
+        print('Downloading Error')
+        print(e)
+        print('Trying again with 1 thread')
+        earthaccess.download(to_download, dest, threads=1)
+
+def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
 
-    results,results1=make_query(dates,bounding_box,sat)
+    # TODO: Ensure that results and results2 actually match up 1:1 for VIIRS
+    results, results2 = make_query(dates,bounding_box,sat)
+    if results2:
+        # "flatten" the two results lists, keeping paired files together so they download 
+        # in the same batch
+        results = [
+            item
+            for pair in zip(results, results2)
+            for item in pair
+        ]
+    
+    meta = {
+        pathlib.Path(x.data_links()[0]).name: 
+        {
+            'satelite': x['umm']['Platforms'][0]['ShortName'],
+            'url': x.data_links()[0],
+            'DayNightFlag': x['umm']['DataGranule']['DayNightFlag'],
+        }
+        for x in results
+    }
 
     if sat in ['viirsj1','viirsj2','viirsn']:
         sat='viirs'
-
-    area=area_definition('name',vent,sat)
-
-    cwd=os.getcwd()
-
+        
+    # We always want batchsize to be even, so VIIRS files will be paired correctly.
+    batchsize = batchsize + 1 if batchsize % 2 != 0 else batchsize
     num_results = len(results)
     batches = math.ceil(num_results / batchsize)
-    num = min(num_results + 1, batchsize) # number of images per batch
-    threads = min(5, num) # Don't try for more than 5 threads.
-
+    num = min(num_results, batchsize) # number of images per batch
+    
+    print(f"Found {num_results} files. Downloading in {batches} batches of {num}")
+    
+    area=area_definition('name',vent,sat)
     dest = pathlib.Path(folder)
+    
+    if sat == 'viirs':
+        reader = 'viirs_l1b'
+        datasets = ['I04','I05']
+    else:
+        reader = 'modis_l1b'
+        datasets = ['21', '32']
+        
+    # Because we can. Not really, but keeps the submit call later cleaner.    
+    process_func = functools.partial(load_and_resample, datasets, reader, area)
 
-    for k in range(batches):
-        auth = earthaccess.login(persist=True)
-        if not auth.authenticated:
-            print("Authentication to earthaccess failed. Unable to download.")
-            raise AuthenticationError("Unable to authenticate")
-
-        try:
-            print(f'Downloading MIR/Combined files (batch {k}/{batches})')
-            earthaccess.download(results[num*k:num*k+num], str(dest), threads=threads)
-        except Exception as e:
-            print('Downloading Error')
-            print(e)
-            print('Trying again with 1 thread')
-            earthaccess.download(results[num*k:num*k+num], str(dest), threads=1)
-
-        if sat=='viirs':
-            try:
-                print(f'Downloading VIIRS TIR files (batch {k}/{batches})')
-                earthaccess.download(results1[num*k:num*k+num], str(dest), threads=num)
-            except Exception as e:
-                print('Download error on VIIRS TIR')
-                print(e)
-                print('Trying again with 1 thread')
-                earthaccess.download(results1[num*k:num*k+num], str(dest), threads=1)
-
-
-        if sat=='viirs':
-            ars2=sorted(dest.glob('VNP02*'))
-            ars2+=sorted(dest.glob('VJ102*'))
-            ars2+=sorted(dest.glob('VJ202*'))
-
-            ars3=sorted(dest.glob('VNP03*'))
-            ars3+=sorted(dest.glob('VJ103*'))
-            ars3+=sorted(dest.glob('VJ203*'))
-        else:
-            ars2=dest.glob('MOD0*')
-            ars2+=dest.glob('MYD0*')
-
-
-        for i in range(len(ars2)):
-            os.chdir(cwd)
-
-            files=[ars2[i]]
-            reader = 'modis_l1b'
+    with ProcessPoolExecutor() as executor:
+        # Download/process in batches of no more than batchsize files to save disk space
+        # Each file takes around 200MB of space, so 200 files ~=40GB disk space. Processed
+        # files are much smaller.
+        for k in range(batches):
+            futures = []
+            args = {}
+            
+            download_batch(results, k, num, folder)
+        
+            # VIIRS files are paired
             if sat=='viirs':
-                reader = 'viirs_l1b'
-                files.append(ars3[i])
+                ars2=sorted(dest.glob('VNP02*'))
+                ars2+=sorted(dest.glob('VJ102*'))
+                ars2+=sorted(dest.glob('VJ202*'))
+        
+                ars3=sorted(dest.glob('VNP03*'))
+                ars3+=sorted(dest.glob('VJ103*'))
+                ars3+=sorted(dest.glob('VJ203*'))
+                
+                input_files = zip(ars2, ars3)
+            else:
+                # We run zip here to keep the file list in a consistant format with VIIRS.
+                # Each element will be a single-element tuple.
+                input_files=zip(dest.glob('M[OY]D0*'))
+      
+            t1 = time.time()
+            print("Downloading batch", k + 1, "complete. Beginning resampling.")
 
-            name_parts = files[0].stem.split('.')
-            img_date = datetime.strptime(".".join(name_parts[1:3]), 'A%Y%j.%H%M')
-            try:
-                scn=Scene(reader=reader,filenames=[str(f.absolute()) for f in files])
+            for files in input_files:
+                name_parts = files[0].stem.split('.')
+                img_date = datetime.strptime(".".join(name_parts[1:3]), 'A%Y%j.%H%M')
+                out_file =  dest / img_date.strftime('%Y%m%d_%H%M.npy')
+                
+                future = executor.submit(process_func, files, out_file)
+                futures.append(future)
+                args[future] = (files, out_file.name)
+                   
+            # Verify completion of all resampling operations. 
+            # We could do things like retry here if we wanted.
+            for future in as_completed(futures):
+                files, out_filename = args[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    # if we wanted to retry, we could get the original URL for this file
+                    # by calling meta[files[0].name]
+                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
+                    traceback.print_exc()
+                    continue
+                
+                # Adjust the metadata filename to key off the output file rather than the input.
+                out_meta = meta.pop(files[0].name)
+        
+                if len(files) > 1: # the viirs paired file, if viirs
+                    out_meta['url'] = [
+                        out_meta['url'],
+                        meta.pop(files[1].name)['url']
+                    ]
+        
+                meta[out_filename] = out_meta
+            print("Resampling of batch", k + 1, "complete in", time.time() - t1, "seconds")
+            
+    return meta
 
-                if sat=='viirs':
-                    scn.load(['I04','I05'],calibration='radiance')
-                    try:
-                        cropscn = scn.resample(destination=area, datasets=['I04','I05'])
-                    except ValueError:
-                        file, file1 = files
-                        print('Retrying',str(file),str(file1))
-                        file.unlink()
-                        file1.unlink()
-                        filename=file.name
-                        link=results[0].data_links()[0].split(filename.split('.')[0])[0]
-                        link+=filename.split('.')[0]+'/'+filename
-                        subprocess.call('wget -P '+str(dest)+' '+link,shell=True)
-                        filename1=file1.name
-                        link1=results1[0].data_links()[0].split(filename1.split('.')[0])[0]
-                        link1+=filename1.split('.')[0]+'/'+filename1
-                        subprocess.call('wget -P '+str(dest)+' '+link1,shell=True)
+def load_and_resample(
+    datasets: Sequence[str],
+    reader: str,
+    area: geometry.AreaDefinition,
+    in_files: Sequence,
+    out_file: str
+) -> None:
+    """
+    Load datasets, resample to a specified area, and save the combined data to a file.
 
-                        scn=Scene(reader='viirs_l1b',filenames=[str(file.absolute()),str(file1.absolute())])
-                        scn.load(['I04','I05'],calibration='radiance')
-                        cropscn = scn.resample(destination=area, datasets=['I04','I05'])
-                    mir = cropscn['I04'].to_numpy()
-                    tir = cropscn['I05'].to_numpy()
+    Parameters
+    ----------
+    datasets : Sequence[str]
+        List of dataset names to load and process.
+    reader : str
+        Reader type used by SatPy to load the datasets.
+    area : geometry.AreaDefinition
+        The area to which the data should be resampled.
+    in_files : Sequence
+        List of input file paths containing the datasets.
+    out_file : str
+        Path to the output file where the resampled data will be saved.
 
-                else:
-                    scn.load(['21','32'],calibration='radiance')
-                    try:
-                        cropscn = scn.resample(destination=area, datasets=['21','32'])
-                    except ValueError:
-                        file = files[0]
-                        file.unlink()
-                        filename=file.name
+    Returns
+    -------
+    None
+        Output is saved to a Numpy file.
 
-                        link=results[0].data_links()[0].split(filename.split('.')[0])[0]
-                        link+=filename.split('.')[0]+'/'+filename
-                        subprocess.call('wget -P '+str(dest)+' '+link,shell=True)
-                        scn=Scene(reader='modis_l1b',filenames=[str(file.absolute())])
-                        scn.load(['21','32'],calibration='radiance')
-                        cropscn = scn.resample(destination=area, datasets=['21','32'])
-                    mir = cropscn['21'].to_numpy()
-                    tir = cropscn['32'].to_numpy()
+    Notes
+    -----
+    - source files are deleted after processing.
 
-                # Fill missing values
-                min_mir_observered = np.nanmin(mir)
-                min_tir_observered = np.nanmin(tir)
-                mir[np.isnan(mir)] = min_mir_observered
-                tir[np.isnan(tir)] = min_tir_observered
-
-                data=np.ones((70,70,2))*np.nan
-                data[:,:,0]=mir
-                data[:,:,1]=tir
-
-                np.save(dest / img_date.strftime('%Y%m%d_%H%M.npy'),data)
-            except Exception as e:
-                print(f"Unable to process {files[0]}. Skipping")
-                print(e)
-            finally:
-                for file in files:
-                    file.unlink()
+    Warnings
+    --------
+    - Warnings related to inefficient chunking operations are suppressed.
+    """ 
+    # Loading the scene results in warnings about an ineficient chunking operations
+    # Since this is SatPy, and we can't do anything about it, just ignore the warnings.
+    warnings.simplefilter("ignore", UserWarning)
+    
+    scn=Scene(reader=reader,filenames=[str(f.absolute()) for f in in_files])
+    scn.load(datasets,calibration='radiance')
+    cropscn = scn.resample(destination=area, datasets=datasets)
+    mir = cropscn[datasets[0]].to_numpy()
+    tir = cropscn[datasets[1]].to_numpy()
+    
+    # Fill missing values
+    mir[np.isnan(mir)] = np.nanmin(mir)
+    tir[np.isnan(tir)] = np.nanmin(tir)
+    
+    data = np.dstack((mir, tir))
+    np.save(out_file, data)
+    
+    for file in in_files:
+        file.unlink()

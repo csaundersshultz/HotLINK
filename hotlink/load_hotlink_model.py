@@ -7,7 +7,6 @@ function to load the hotlink model
 """
 
 
-from tensorflow.keras.models import load_model
 import os
 
 
@@ -24,6 +23,7 @@ def load_hotlink_model(**kwargs):
     Returns:
     - hotlink_model: Loaded TensorFlow model.
     """
+    from tensorflow.keras.models import load_model    
 
     # get the path to the model directory
     script_directory = os.path.dirname(os.path.realpath(__file__))
