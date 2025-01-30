@@ -38,3 +38,6 @@ py-modules = []
 [project.urls]
 documentation = "https://github.com/csaundersshultz/HotLINK"
 repository = "https://github.com/csaundersshultz/HotLINK"
+
+[project.scripts]
+hotlink = "hotlink.cli:main"

@@ -12,7 +12,7 @@ def parse_vent(value):
     return value  # Otherwise, treat as a name
 
 if __name__ == "__main__":
-    import HotLINK_runner
+    import hotlink
 
     # parser = argparse.ArgumentParser(description="Run HotLINK_runner.get_results from the command line.")
     # parser.add_argument("vent", type=parse_vent, help="Vent name (e.g., 'Shishaldin') or coordinates (e.g., '54.7554,-163.9711').")
@@ -40,7 +40,7 @@ if __name__ == "__main__":
     sensor = 'modis'
 
     t1 = time.time()
-    results = HotLINK_runner.get_results(vent, elevation, dates, sensor)
+    results = hotlink.get_results(vent, elevation, dates, sensor)
     print(results)
     results.to_csv('HotLINK Results.csv', index = False)
     print(f"Calculated results in {time.time() - t1}")

@@ -6,10 +6,15 @@ file for storing support functions used in pre- and post-processing for hotlink
 @author: Pablo Saunders-Shultz
 """
 #IMPORTS
+
+import json
 import os
+import urllib
+
 import numpy as np
 from math import sqrt
 import ephem
+import pandas
 from scipy.ndimage import generate_binary_structure
 from skimage.morphology import dilation
 from skimage.measure import label, regionprops, find_contours
@@ -342,9 +347,82 @@ def get_solar_coords(datetime, volcano_lat, volcano_lng, volcano_elevation):
     solar_azimuth_angle = np.rad2deg(float(sun.az)) - 180
     
     return (solar_zenith_angle, solar_azimuth_angle)
-
-    
-        
-        
     
 
+def haversine_np(lon1, lat1, lon2, lat2) -> np.ndarray:
+    """
+    Calculate the great circle distance between two points
+    on the earth (specified in decimal degrees)
+
+    Works with both numpy arrays and scalars, or a mix - lon/lat 1
+    can be numpy arrays, while lon/lat 2 are scaler values, and it will
+    calculate the distance from lon/lat 2 to each point in the lon/lat 1
+    arrays.
+
+    Less precise than vincenty, but fine for short distances,
+    and works on vector math
+
+    """
+    lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
+
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+
+    a = (
+        np.sin(dlat / 2.0) ** 2
+        + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
+    )
+
+    c = 2 * np.arcsin(np.sqrt(a))
+    km = 6367 * c
+    return km
+
+def load_volcanoes() -> pandas.DataFrame:
+    """
+    Load a list of volcanoes from the USGS Volcano Hazards Program API.
+
+    This function fetches volcano data from `volcanoes.usgs.gov` in GeoJSON format, 
+    extracts relevant details (longitude, latitude, name, and ID), and returns 
+    the data as a pandas DataFrame.
+
+    Returns:
+    --------
+    pandas.DataFrame
+        A DataFrame containing the following columns:
+        - `lon` (float): Longitude of the volcano.
+        - `lat` (float): Latitude of the volcano.
+        - `name` (str): Name of the volcano.
+        - `id` (str): Unique identifier for the volcano.
+
+    Notes:
+    ------
+    - The function filters out volcanoes that do not have a `volcanoCd` (ID).
+    - The API response is expected to be in GeoJSON format.
+
+    Raises:
+    -------
+    urllib.error.URLError
+        If there is an issue connecting to the API.
+    json.JSONDecodeError
+        If the response cannot be parsed as JSON.
+    KeyError
+        If the expected keys are missing from the API response.
+    """
+    url = 'https://volcanoes.usgs.gov/vsc/api/volcanoApi/geojson'
+    with urllib.request.urlopen(url) as response:
+        volcs = json.load(response)
+
+    features = volcs['features']
+    data = [
+        {
+            "lon": feature['geometry']['coordinates'][0],
+            "lat": feature['geometry']['coordinates'][1],
+            "name": feature['properties']['volcanoName'],
+            "id": feature['properties']['volcanoCd'],
+        }
+        for feature in features
+        if feature['properties']['volcanoCd']
+    ]
+
+    df = pandas.DataFrame(data)
+    return df

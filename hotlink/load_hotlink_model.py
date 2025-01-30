@@ -23,15 +23,19 @@ def load_hotlink_model(**kwargs):
     Returns:
     - hotlink_model: Loaded TensorFlow model.
     """
+    # Import inside the function so we don't incur the import overhead when
+    # running multiple processes
+    import tensorflow
     from tensorflow.keras.models import load_model    
 
     # get the path to the model directory
     script_directory = os.path.dirname(os.path.realpath(__file__))
+    tensorflow_version = ".".join(tensorflow.__version__.split('.')[:2])
     print('hello')
     try:
         # Construct the path to the model directory
         model_directory = os.path.join(script_directory, "hotlink_model_new")
-        model_path = os.path.join(model_directory, "hotlink_tf2.14.keras")
+        model_path = os.path.join(model_directory, f"hotlink_tf{tensorflow_version}.keras")
         # Load the model
         print(f'Trying to load model from: {model_path}')
         hotlink_model = load_model(model_path, **kwargs)

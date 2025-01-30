@@ -8,34 +8,69 @@ from functools import partial
 import numpy
 import pandas
 
-from hotlink import preprocess
-from hotlink.support_functions import crop_center, radiative_power, brightness_temperature, get_dn, normalize_MIR, normalize_TIR, get_solar_coords
+from hotlink.load_hotlink_model import load_hotlink_model
+from hotlink import preprocess, support_functions
 from skimage.filters import apply_hysteresis_threshold
-
-from . import utils
-
-def load_model():
-    import tensorflow
-    
-    tensorflow_version = ".".join(tensorflow.__version__.split('.')[:2])
-    script_directory = pathlib.Path(__file__).parent.absolute()
-    # model_dir = script_directory / "hotlink" / "hotlink_model_new"
-
-    model_path = script_directory / f"hotlink_tf{tensorflow_version}.keras"
-
-    model = tensorflow.keras.models.load_model(str(model_path))
-    return model
+from tensorflow.keras.models import Model
 
 
-def process_image(vent, elevation, model, file):
+def process_image(
+    vent: tuple[float, float],
+    elevation: int,
+    model: Model,
+    file: pathlib.Path
+) -> dict:
+    """
+    Process a satellite image to detect volcanic hotspots and compute radiative power.
+
+    The function loads a thermal infrared (TIR) and mid-infrared (MIR) image, 
+    normalizes and processes the data, applies a deep learning model to 
+    identify hotspots, and calculates various temperature and solar parameters.
+
+    Parameters:
+    -----------
+    vent : tuple[float, float]
+        Latitude and longitude of the volcano vent.
+    elevation : float
+        Elevation of the volcano in meters.
+    model : tensorflow.keras.Model
+        Trained model for hotspot classification.
+    file : pathlib.Path
+        Path to the input image file.
+
+    Returns:
+    --------
+    dict
+        A dictionary containing:
+        - 'source file' (str): Original filename.
+        - 'date' (datetime.datetime): Timestamp extracted from the filename.
+        - 'radiative_power' (float): Estimated radiative power in Watts.
+        - 'day_night flag' (str): d if daytime, n if nighttime.
+        - 'max_prob' (float): Maximum probability of a hotspot in the image.
+        - 'mir_hotspot_bt' (float): Mean MIR brightness temperature of hotspots.
+        - 'mir_background_bt' (float): Mean MIR brightness temperature of background.
+        - 'mir_hotspot_max_bt' (float): Maximum MIR brightness temperature of hotspots.
+        - 'tir_hotspot_bt' (float): Mean TIR brightness temperature of hotspots.
+        - 'tir_hotspot_max_bt' (float): Maximum TIR brightness temperature of hotspots.
+        - 'tir_background_bt' (float): Mean TIR brightness temperature of background.
+        - 'num_hotspot_pixels' (int): Number of detected hotspot pixels.
+        - 'solar_zenith' (float): Solar zenith angle at capture time.
+        - 'solar_azimuth' (float): Solar azimuth angle at capture time.
+        - 'Pixels above 0.5 prob' (int): Count of pixels with a probability > 0.5.
+
+    Notes:
+    ------
+    - Uses hysteresis thresholding to refine hotspot detection.
+    - Deletes the input file after processing.
+    """    
     filename = file.name
     image_date = datetime.strptime(file.stem, '%Y%m%d_%H%M')
     data = numpy.load(file)
     mir = data[:, :, 0].copy()
     tir = data[:, :, 1].copy()
 
-    n_mir = normalize_MIR(mir) #note, normalize also fills in missing pixels
-    n_tir = normalize_TIR(tir)
+    n_mir = support_functions.normalize_MIR(mir) #note, normalize also fills in missing pixels
+    n_tir = support_functions.normalize_TIR(tir)
     stacked = numpy.dstack([n_mir, n_tir])
 
     # Make sure the original mir array doesn't have any missing pixels
@@ -46,7 +81,7 @@ def process_image(vent, elevation, model, file):
     min_tir_observered = numpy.nanmin(tir)
     tir[numpy.isnan(tir)] = min_tir_observered
 
-    predict_data = crop_center(stacked).reshape(1, 64, 64, 2)
+    predict_data = support_functions.crop_center(stacked).reshape(1, 64, 64, 2)
     prediction = model.predict(predict_data) #shape=[batch_size, 24, 24, 3], for 3 predicted classes:background, hotspot-adjacent, and hotspot
 
     # get predicted class for each pixel (highest probability)
@@ -60,21 +95,21 @@ def process_image(vent, elevation, model, file):
     num_hotspot_pixels = numpy.count_nonzero(hotspot_mask)
 
     # generate results
-    mir_analysis = crop_center(mir, size=24) #crop to output size, for analysis
-    tir_analysis = crop_center(tir, size = 24) # So we can get the background TIR brightness temperature
-    rp = radiative_power(mir_analysis, hotspot_mask) # in Watts
+    mir_analysis = support_functions.crop_center(mir, size=24) #crop to output size, for analysis
+    tir_analysis = support_functions.crop_center(tir, size = 24) # So we can get the background TIR brightness temperature
+    rp = support_functions.radiative_power(mir_analysis, hotspot_mask) # in Watts
 
     # mir hotspot/background brightness temperature analysis
     mir_hotspot = mir_analysis[hotspot_mask ]
     mir_background = mir_analysis[~hotspot_mask]
-    hotspot_mir_bt = brightness_temperature(mir_hotspot, wl=3.74e-6)
-    bg_mir_bt = brightness_temperature(mir_background, wl=3.74e-6)
+    hotspot_mir_bt = support_functions.brightness_temperature(mir_hotspot, wl=3.74e-6)
+    bg_mir_bt = support_functions.brightness_temperature(mir_background, wl=3.74e-6)
 
     # tir hotspot/background brigbhtness temerature analysis
     tir_hotspot = tir_analysis[hotspot_mask ]
     tir_background = tir_analysis[~hotspot_mask]
-    hotspot_tir_bt = brightness_temperature(tir_hotspot, wl=3.74e-6)
-    bg_tir_bt = brightness_temperature(tir_background, wl=3.74e-6)
+    hotspot_tir_bt = support_functions.brightness_temperature(tir_hotspot, wl=3.74e-6)
+    bg_tir_bt = support_functions.brightness_temperature(tir_background, wl=3.74e-6)
 
     try:
         mir_max_hs_bt = hotspot_mir_bt.max()
@@ -84,14 +119,14 @@ def process_image(vent, elevation, model, file):
         mir_max_hs_bt = numpy.nan
         tir_max_hs_bt = numpy.nan
 
-#    day_night = get_dn(image_date, vent[1], vent[0], elevation)
-    sol_zenith, sol_azimuth = get_solar_coords(image_date, vent[1], vent[0], elevation)
+    day_night = support_functions.get_dn(image_date, vent[1], vent[0], elevation)
+    sol_zenith, sol_azimuth = support_functions.get_solar_coords(image_date, vent[1], vent[0], elevation)
 
     result = {
         'source file': filename,
         'date': image_date,
         'radiative_power': rp,
-#        'day_night flag': day_night,
+        'day_night flag': day_night,
         'max_prob': max_prob,
         'mir_hotspot_bt': hotspot_mir_bt.mean(),
         'mir_background_bt': bg_mir_bt.mean(),
@@ -171,7 +206,7 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
     >>> print(results)
     """
 
-    volcs = utils.load_volcanoes()
+    volcs = support_functions.load_volcanoes()
 
     if isinstance(vent, str):
         volc = volcs[volcs['name']==vent]
@@ -179,7 +214,7 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
             raise ValueError("Specified volcano not found!")
         vent = (volc.iloc[0]['lat'], volc.iloc[0]['lon'])
     else:
-        dists = utils.haversine_np(vent[1], vent[0], volcs['lon'], volcs['lat'])
+        dists = support_functions.haversine_np(vent[1], vent[0], volcs['lon'], volcs['lat'])
         volcs.loc[:, 'dist'] = dists
         volc = volcs[volcs['dist']==volcs['dist'].min()]
 
@@ -195,7 +230,7 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
 
     data_files = list(data_path.glob('*.npy'))
 
-    model = load_model()
+    model = load_hotlink_model()
 
     results = []
 
