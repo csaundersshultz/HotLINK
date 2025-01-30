@@ -12,18 +12,25 @@ def parse_vent(value):
             raise argparse.ArgumentTypeError("Invalid coordinates format. Use 'lat,lon' (e.g., '54.7554,-163.9711').")
     return value  # Otherwise, treat as a name
 
+def parse_dates(value):
+    """Parses date value, returns a tuple of dates"""
+    dates = value.split(',')
+    if len(dates) != 2:
+        raise argparse.ArgumentTypeError("Invalid date format. Use \"start_date,stop_date\"")
+    return tuple(dates)
+    
+
 def main():
-    parser = argparse.ArgumentParser(description="Run HotLINK_runner.get_results from the command line.")
+    parser = argparse.ArgumentParser(description="Download VIIRS or MODIS images and run HotLINK analysis")
     parser.add_argument("vent", type=parse_vent, help="Vent name (e.g., 'Shishaldin') or coordinates (e.g., '54.7554,-163.9711').")
-    parser.add_argument("elevation", type=float, help="Elevation value")
-    parser.add_argument("dates", type=str, help="Date range (e.g., '2023-01-01,2023-12-31')")
-    parser.add_argument("sensor", type=str, help="Sensor name")
+    parser.add_argument("elevation", type=float, help="Elevation, in meters")
+    parser.add_argument("dates", type=parse_dates, help="Date range (e.g., '2023-01-01,2023-12-31')")
+    parser.add_argument("sensor", type=str, choices=['modis', 'viirs'], help="Sensor name (viirs or modis)")
 
     args = parser.parse_args()
-    dates = tuple(args.dates.split(","))
     
     t1 = time.time()
-    results = hotlink.get_results(args.vent, args.elevation, dates, args.sensor)
+    results = hotlink.get_results(args.vent, args.elevation, args.dates, args.sensor.lower())
     results.to_csv('HotLINK Results.csv', index = False)
 
     print(f"Calculated results in {time.time() - t1}")
