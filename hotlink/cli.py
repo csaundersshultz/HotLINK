@@ -1,5 +1,6 @@
 import argparse
 import time
+import hotlink
 
 def parse_vent(value):
     """Parses vent argument: returns as string if a name, or tuple if coordinates."""
@@ -22,8 +23,6 @@ def main():
     dates = args.dates.split(",")
     
     t1 = time.time()
-    # Don't import this until actually needed, so argument parsing can be fast. 
-    import hotlink
     results = hotlink.get_results(args.vent, args.elevation, dates, args.sensor)
     results.to_csv('HotLINK Results.csv', index = False)
 

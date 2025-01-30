@@ -11,13 +11,11 @@ import pandas
 from hotlink.load_hotlink_model import load_hotlink_model
 from hotlink import preprocess, support_functions
 from skimage.filters import apply_hysteresis_threshold
-from tensorflow.keras.models import Model
-
 
 def process_image(
     vent: tuple[float, float],
     elevation: int,
-    model: Model,
+    model: "Model",
     file: pathlib.Path
 ) -> dict:
     """
