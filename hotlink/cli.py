@@ -12,8 +12,6 @@ def parse_vent(value):
     return value  # Otherwise, treat as a name
 
 def main():
-    import hotlink
-    
     parser = argparse.ArgumentParser(description="Run HotLINK_runner.get_results from the command line.")
     parser.add_argument("vent", type=parse_vent, help="Vent name (e.g., 'Shishaldin') or coordinates (e.g., '54.7554,-163.9711').")
     parser.add_argument("elevation", type=float, help="Elevation value")
@@ -24,6 +22,8 @@ def main():
     dates = args.dates.split(",")
     
     t1 = time.time()
+    # Don't import this until actually needed, so argument parsing can be fast. 
+    import hotlink
     results = hotlink.get_results(args.vent, args.elevation, dates, args.sensor)
     results.to_csv('HotLINK Results.csv', index = False)
 
