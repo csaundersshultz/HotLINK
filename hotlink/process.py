@@ -135,7 +135,10 @@ def process_image(
     # generate results
     mir_analysis = support_functions.crop_center(mir, size=24) #crop to output size, for analysis
     tir_analysis = support_functions.crop_center(tir, size = 24) # So we can get the background TIR brightness temperature
-    rp = support_functions.radiative_power(mir_analysis, hotspot_mask) # in Watts
+    if hotspot_mask.any():
+        rp = support_functions.radiative_power(mir_analysis, hotspot_mask) # in Watts
+    else:
+        rp = numpy.nan
 
     # mir hotspot/background brightness temperature analysis
     mir_hotspot = mir_analysis[hotspot_mask ]
@@ -150,8 +153,8 @@ def process_image(
     bg_tir_bt = support_functions.brightness_temperature(tir_background, wl=3.74e-6)
 
     try:
-        mir_max_hs_bt = hotspot_mir_bt.max()
-        tir_max_hs_bt = hotspot_tir_bt.max()
+        mir_max_hs_bt = hotspot_mir_bt.max().round(4)
+        tir_max_hs_bt = hotspot_tir_bt.max().round(4)
     except ValueError:
         # Handle the no detection case
         mir_max_hs_bt = numpy.nan
@@ -161,24 +164,24 @@ def process_image(
     sol_zenith, sol_azimuth = support_functions.get_solar_coords(image_date, vent[1], vent[0], elevation)
 
     result = {
-        'date': image_date,
-        'radiative_power': rp,
-        'day_night flag': day_night,
-        'max_prob': max_prob,
-        'mir_hotspot_bt': hotspot_mir_bt.mean(),
-        'mir_background_bt': bg_mir_bt.mean(),
-        'mir_hotspot_max_bt': mir_max_hs_bt,
-        'tir_hotspot_bt': hotspot_tir_bt.mean(),
-        'tir_hotspot_max_bt': tir_max_hs_bt,
-        'tir_background_bt': bg_tir_bt.mean(),
-        'num_hostspot_pixels': num_hotspot_pixels,
-        'solar_zenith': sol_zenith,
-        'solar_azimuth': sol_azimuth,
-        'Pixels above 0.5 prob': prob_above_05,
-        'data file': filename,
-        'mir_image': str(mir_image),
-        'tir_image': str(tir_image),
-        'probability_tif': str(geotiff_file),
+        'Date': image_date,
+        'Hotspot Radiative Power (W)': round(rp, 4),
+        'Day/Night Flag': day_night,
+        'Max Probability': round(max_prob, 3),
+        'MIR Hotspot Brightness Temperature': hotspot_mir_bt.mean().round(4),
+        'MIR Hotspot Max Brightness Temperature': mir_max_hs_bt,
+        'MIR Background Brightness Temperature': bg_mir_bt.mean().round(4),
+        'TIR Hotspot Brightness Temperature': hotspot_tir_bt.mean().round(4),
+        'TIR Hotspot Max Brightness Temperature': tir_max_hs_bt,
+        'TIR Background Brightness Temperature': bg_tir_bt.mean().round(4),
+        'Number Hotspot Pixels': num_hotspot_pixels,
+        'Pixels Above 0.5 Probability': prob_above_05,
+        'Solar Zenith': round(sol_zenith, 1),
+        'Solar Azimuth': round(sol_azimuth, 1),
+        'Data File': filename,
+        'MIR Image': str(mir_image),
+        'TIR Image': str(tir_image),
+        'Probability TIFF': str(geotiff_file),
     }
 
     # Move the data file into the output directory
@@ -311,14 +314,14 @@ def get_results(
     results = pandas.DataFrame(results)
 
     # Add results that apply to all
-    results['sensor'] = sensor
-    results['VolcanoID'] = volc.iloc[0]['id']
+    results['Sensor'] = sensor.upper()
+    results['Volcano ID'] = volc.iloc[0]['id']
 
     # pull in metadata retrieved during the download
-    meta_map = results['data file'].map(meta)
-    results = results.drop(columns=['data file'])
-    results['satellite'] = meta_map.map(lambda x: x.get('satelite'))
-    results['dataURL'] = meta_map.map(lambda x: x.get('url'))
+    meta_map = results['Data File'].map(meta)
+    results = results.drop(columns=['Data File'])
+    results['Satellite'] = meta_map.map(lambda x: x.get('satelite'))
+    results['Data URL'] = meta_map.map(lambda x: x.get('url'))
 
     # post-process some images
     center_lat, center_lon = vent
@@ -341,10 +344,10 @@ def get_results(
             dst.transform = transform
             dst.crs = crs
 
-    for file_path in results['probability_tif']:
+    for file_path in results['Probability TIFF']:
         update_geotransform(file_path)
 
 
     if len(results) > 0:
-        results = results.sort_values('date').reset_index(drop = True)
+        results = results.sort_values('Date').reset_index(drop = True)
     return results
