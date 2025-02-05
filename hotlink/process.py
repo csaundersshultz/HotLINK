@@ -1,12 +1,18 @@
-import os
+import math
 import pathlib
+import shutil
+import threading
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
 
+import matplotlib
+matplotlib.use('Agg')  # Use the Agg backend
+import matplotlib.pyplot as plt
 import numpy
 import pandas
+import rasterio
 
 from hotlink.load_hotlink_model import load_hotlink_model
 from hotlink import preprocess, support_functions
@@ -16,13 +22,14 @@ def process_image(
     vent: tuple[float, float],
     elevation: int,
     model: "Model",
+    out_dir: pathlib.Path,
     file: pathlib.Path
 ) -> dict:
     """
     Process a satellite image to detect volcanic hotspots and compute radiative power.
 
-    The function loads a thermal infrared (TIR) and mid-infrared (MIR) image, 
-    normalizes and processes the data, applies a deep learning model to 
+    The function loads a thermal infrared (TIR) and mid-infrared (MIR) image,
+    normalizes and processes the data, applies a deep learning model to
     identify hotspots, and calculates various temperature and solar parameters.
 
     Parameters:
@@ -60,12 +67,32 @@ def process_image(
     ------
     - Uses hysteresis thresholding to refine hotspot detection.
     - Deletes the input file after processing.
-    """    
+    """
     filename = file.name
     image_date = datetime.strptime(file.stem, '%Y%m%d_%H%M')
+
+    out_dir = out_dir / str(image_date.year) / str(image_date.month)
+    out_dir.mkdir(parents = True, exist_ok = True)
+
     data = numpy.load(file)
+
     mir = data[:, :, 0].copy()
     tir = data[:, :, 1].copy()
+
+    # Save MIR and TIR images
+    mir_image = out_dir / f"{file.stem}_mir.png"
+    tir_image = out_dir / f"{file.stem}_tir.png"
+    _save_fig(
+        mir,
+        mir_image,
+        f"Middle Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
+    )
+
+    _save_fig(
+        tir,
+        tir_image,
+        f"Thermal Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
+    )
 
     n_mir = support_functions.normalize_MIR(mir) #note, normalize also fills in missing pixels
     n_tir = support_functions.normalize_TIR(tir)
@@ -91,6 +118,19 @@ def process_image(
     prob_above_05 = numpy.count_nonzero(prob_active>0.5)
     hotspot_mask = apply_hysteresis_threshold(prob_active, low=0.4, high=0.5).astype('bool') #hysteresis thresholding active mask
     num_hotspot_pixels = numpy.count_nonzero(hotspot_mask)
+
+    # Save probability matrix to a tiff file (geo transform will be added later)
+    geotiff_file = out_dir / f"{file.stem}_probability.tif"
+    with rasterio.open(
+        geotiff_file,
+        'w',
+        driver = 'GTiff',
+        height = prob_active.shape[0],
+        width = prob_active.shape[1],
+        count = 1,
+        dtype = prob_active.dtype
+    ) as dst:
+        dst.write(prob_active, 1)
 
     # generate results
     mir_analysis = support_functions.crop_center(mir, size=24) #crop to output size, for analysis
@@ -121,7 +161,6 @@ def process_image(
     sol_zenith, sol_azimuth = support_functions.get_solar_coords(image_date, vent[1], vent[0], elevation)
 
     result = {
-        'source file': filename,
         'date': image_date,
         'radiative_power': rp,
         'day_night flag': day_night,
@@ -136,13 +175,35 @@ def process_image(
         'solar_zenith': sol_zenith,
         'solar_azimuth': sol_azimuth,
         'Pixels above 0.5 prob': prob_above_05,
+        'data file': filename,
+        'mir_image': str(mir_image),
+        'tir_image': str(tir_image),
+        'probability_tif': str(geotiff_file),
     }
 
-    file.unlink()
+    # Move the data file into the output directory
+    shutil.move(str(file), str(out_dir/file.name))
 
     return result
 
-def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[str, str], sensor: str) -> pandas.DataFrame:
+lock = threading.Lock()
+def _save_fig(img, out, title):
+    with lock:
+        fig = plt.figure(figsize=(4, 4))
+        plt.imshow(img)
+        plt.colorbar()
+        plt.title(title)
+        fig.savefig(str(out))
+        plt.close(fig)
+
+
+def get_results(
+    vent: str | tuple[float, float],
+    elevation: int,
+    dates: tuple[str, str],
+    sensor: str,
+    out_dir = None
+) -> pandas.DataFrame:
 
     """
     Retrieve and process satellite images for a given volcano and date range.
@@ -216,12 +277,18 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
         volcs.loc[:, 'dist'] = dists
         volc = volcs[volcs['dist']==volcs['dist'].min()]
 
-    print("Using volcano:", volc.iloc[0]['name'])
+    print("Using volcano:", volc.iloc[0]['name'], "location:", vent)
+
+    if out_dir is None:
+        out_dir = pathlib.Path("Output") / sensor
+
+    output_dir = pathlib.Path(out_dir)
+    output_dir.mkdir(parents = True, exist_ok = True)
 
     data_path = pathlib.Path('./data')
 
     # make sure the data directory exists
-    os.makedirs(data_path, exist_ok = True)
+    data_path.mkdir(exist_ok = True)
 
     meta = preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
     print("Image files processed. Beginning calculations")
@@ -237,22 +304,47 @@ def get_results(vent: str | tuple[float, float], elevation: int, dates: tuple[st
     # larger sets. ProcessPoolExecutor is horrible here, due to the need for
     # every individual process to import/set up tensorflow, coupled with
     # inter-process communications.
-    process_func = partial(process_image, vent, elevation, model)
+    process_func = partial(process_image, vent, elevation, model, output_dir)
     with ThreadPoolExecutor() as executor:
         results = executor.map(process_func, data_files)
-    
+
     results = pandas.DataFrame(results)
-    
+
     # Add results that apply to all
     results['sensor'] = sensor
     results['VolcanoID'] = volc.iloc[0]['id']
-    
+
     # pull in metadata retrieved during the download
-    meta_map = results['source file'].map(meta)
-    results = results.drop(columns=['source file'])    
+    meta_map = results['data file'].map(meta)
+    results = results.drop(columns=['data file'])
     results['satellite'] = meta_map.map(lambda x: x.get('satelite'))
     results['dataURL'] = meta_map.map(lambda x: x.get('url'))
-    
+
+    # post-process some images
+    center_lat, center_lon = vent
+    meters_per_degree_lat = 111320  # Roughly constant
+    meters_per_degree_lon = 111320 * math.cos(math.radians(center_lat))  # Varies by latitude
+
+    resolution = 1000 if sensor == 'MODIS' else 375
+    # Resolution in degrees (meters per pixel converted to degrees)
+    lat_res = resolution / meters_per_degree_lat
+    lon_res = resolution / meters_per_degree_lon
+
+    size = 24
+    transform = rasterio.transform.from_origin(center_lon - (size / 2) * lon_res,
+                                               center_lat + (size / 2) * lat_res,
+                                               lon_res, lat_res)
+    crs = {'init': 'EPSG:4326'}
+
+    def update_geotransform(file_path):
+        with rasterio.open(file_path, 'r+') as dst:
+            dst.transform = transform
+            dst.crs = crs
+
+    for file_path in results['probability_tif']:
+        update_geotransform(file_path)
+
+
     if len(results) > 0:
         results = results.sort_values('date').reset_index(drop = True)
     return results
