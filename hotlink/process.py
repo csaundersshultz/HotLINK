@@ -1,10 +1,9 @@
-import math
 import pathlib
 import shutil
 import threading
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, UTC
 from functools import partial
 
 import matplotlib
@@ -13,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy
 import pandas
 import rasterio
+import utm
 
 from hotlink.load_hotlink_model import load_hotlink_model
 from hotlink import preprocess, support_functions
@@ -205,8 +205,8 @@ def get_results(
     elevation: int,
     dates: tuple[str, str],
     sensor: str,
-    out_dir = None
-) -> pandas.DataFrame:
+    out_dir: str | pathlib.Path | None = None
+) -> (pandas.DataFrame, dict):
 
     """
     Retrieve and process satellite images for a given volcano and date range.
@@ -226,17 +226,21 @@ def get_results(
     dates : tuple[str, str]
         A tuple specifying the start and end dates for data retrieval in the
         format "YYYY-MM-DD" (e.g., `("2023-01-01", "2023-12-31")`).
-    sensor : str
+    sensor : str 
         The satellite sensor to retrieve data from. Must be one of:
         - 'viirs': Visible Infrared Imaging Radiometer Suite
         - 'modis': Moderate Resolution Imaging Spectroradiometer
+    out_dir : str | Path, default "Output/{sensor}"
+        The directory in which to save output image products. Will be created
+        if it does not exist.
 
     Returns
     -------
-    pandas.DataFrame
+    results: pandas.DataFrame
         A DataFrame containing the processed results for each image. Each row
-        corresponds to an image and includes various statistics such as sensor
-        metadata, volcano information, and model output.
+        corresponds to an  input image and includes model output.
+    meta: dict
+        A Dictionary containing metadata about the run
 
     Raises
     ------
@@ -255,7 +259,8 @@ def get_results(
     ...     vent="Shishaldin",
     ...     elevation=2550,
     ...     dates=("2019-01-01", "2019-12-31"),
-    ...     sensor="viirs"
+    ...     sensor="viirs",
+    ...     out_dir="Output Images"
     ... )
     >>> print(results)
 
@@ -268,6 +273,14 @@ def get_results(
     >>> print(results)
     """
 
+    meta = {
+        'Vent': vent,
+        'Elevation': elevation,
+        'Data Dates': dates,
+        'Sensor': sensor,
+        'Run Start': datetime.now(UTC).isoformat(),
+    }
+    
     volcs = support_functions.load_volcanoes()
 
     if isinstance(vent, str):
@@ -281,11 +294,16 @@ def get_results(
         volc = volcs[volcs['dist']==volcs['dist'].min()]
 
     print("Using volcano:", volc.iloc[0]['name'], "location:", vent)
+    
+    meta['Volcano Name'] = volc.iloc[0]['name']
+    meta['Volcano ID'] = volc.iloc[0]['id']
+    meta['Center'] = vent
 
     if out_dir is None:
         out_dir = pathlib.Path("Output") / sensor
 
-    output_dir = pathlib.Path(out_dir)
+    # Make sure this is a pathlib.Path object, and make sure it exists, creating it if needed.
+    output_dir = pathlib.Path(out_dir).expanduser().resolve()
     output_dir.mkdir(parents = True, exist_ok = True)
 
     data_path = pathlib.Path('./data')
@@ -293,14 +311,12 @@ def get_results(
     # make sure the data directory exists
     data_path.mkdir(exist_ok = True)
 
-    meta = preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
+    download_meta = preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
     print("Image files processed. Beginning calculations")
 
     data_files = list(data_path.glob('*.npy'))
 
     model = load_hotlink_model()
-
-    results = []
 
     # Using the thread pool here provides a very modest (~16% in my testing) speedup.
     # It might not be worth the complexity for smaller image sets, but could help a bit with
@@ -312,32 +328,30 @@ def get_results(
         results = executor.map(process_func, data_files)
 
     results = pandas.DataFrame(results)
+    meta['Result Count'] = len(results)
 
     # Add results that apply to all
     results['Sensor'] = sensor.upper()
     results['Volcano ID'] = volc.iloc[0]['id']
 
     # pull in metadata retrieved during the download
-    meta_map = results['Data File'].map(meta)
-    results = results.drop(columns=['Data File'])
-    results['Satellite'] = meta_map.map(lambda x: x.get('satelite'))
-    results['Data URL'] = meta_map.map(lambda x: x.get('url'))
+    file_meta = results['Data File'].map(download_meta)
+    results['Satellite'] = file_meta.map(lambda x: x.get('satelite'))
+    results['Data URL'] = file_meta.map(lambda x: x.get('url'))
 
-    # post-process some images
-    center_lat, center_lon = vent
-    meters_per_degree_lat = 111320  # Roughly constant
-    meters_per_degree_lon = 111320 * math.cos(math.radians(center_lat))  # Varies by latitude
-
+    # Add the geo-transform to the generated TIFF files.
+    center_x, center_y, utm_zone, utm_lat_band = utm.from_latlon(*vent)
     resolution = 1000 if sensor == 'MODIS' else 375
-    # Resolution in degrees (meters per pixel converted to degrees)
-    lat_res = resolution / meters_per_degree_lat
-    lon_res = resolution / meters_per_degree_lon
-
     size = 24
-    transform = rasterio.transform.from_origin(center_lon - (size / 2) * lon_res,
-                                               center_lat + (size / 2) * lat_res,
-                                               lon_res, lat_res)
-    crs = {'init': 'EPSG:4326'}
+    transform = rasterio.transform.from_origin(center_x - (size / 2) * resolution,
+                                               center_y + (size / 2) * resolution,
+                                               resolution, resolution)
+    
+    hemisphere = hemisphere = " +south" if utm_lat_band < 'N' else ""
+    
+    crs = f"+proj=utm +zone={utm_zone}{hemisphere} +datum=WGS84 +units=m +no_defs"
+    meta['UTM Zone'] = utm_zone
+    meta['UTM Latitude Band'] = utm_lat_band
 
     def update_geotransform(file_path):
         with rasterio.open(file_path, 'r+') as dst:
@@ -347,7 +361,8 @@ def get_results(
     for file_path in results['Probability TIFF']:
         update_geotransform(file_path)
 
-
     if len(results) > 0:
         results = results.sort_values('Date').reset_index(drop = True)
-    return results
+        
+    meta['Run End'] = datetime.now(UTC).isoformat()
+    return results, meta

@@ -83,7 +83,6 @@ def download_batch(results, batch, num, dest):
         raise AuthenticationError("Unable to authenticate")
 
     try:
-        print(f'Downloading files (batch {batch + 1})')
         earthaccess.download(to_download, dest, threads=threads)
     except Exception as e:
         print('Downloading Error')
@@ -148,6 +147,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
             futures = []
             args = {}
 
+            print(f'Downloading files (batch {k + 1}/{batches})')            
             download_batch(results, k, num, folder)
 
             # VIIRS files are paired

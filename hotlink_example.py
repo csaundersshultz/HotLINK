@@ -1,13 +1,11 @@
 import json
 import time
 
-from datetime import UTC, datetime
-
 if __name__ == "__main__":
     import hotlink
 
-    vent = "Shishaldin"
-    elevation = 2857
+    vent = "Shishaldin" # Can also be defined as a latitude, longitude pair for more precise positioning.
+    elevation = 2857 # Used to calculate solar zenith/azimuth angles
 
     dates = ("2019-07-30", "2019-07-31 00:00") # YYYY-MM-DD HH:MM, from to.
 
@@ -15,18 +13,18 @@ if __name__ == "__main__":
     sensor = 'viirs'
 
     t1 = time.time()
-    results = hotlink.get_results(vent, elevation, dates, sensor, out_dir = f'Output/{sensor}')
-    print(results)
-    results.to_csv(f'Output/{sensor}/Results.csv', index = False, float_format='%.4f')
 
-    meta = {
-        'Vent': vent,
-        'Elevation': elevation,
-        'Data Dates': dates,
-        'Sensor': sensor,
-        'Num Results': len(results),
-        'Run Date': datetime.now(UTC).isoformat(),
-    }
+    results, meta = hotlink.get_results(
+        vent,
+        elevation,
+        dates,
+        sensor,
+        out_dir = f'Output/{sensor}'
+    )
+    
+    print(results)
+    
+    results.to_csv(f'Output/{sensor}/Results.csv', index = False, float_format='%.4f')
 
     with open(f'Output/{sensor}/metadata.json', 'w') as f:
         json.dump(meta, f, indent = 4)
