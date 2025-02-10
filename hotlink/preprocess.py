@@ -183,27 +183,27 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
             # We could do things like retry here if we wanted.
             for future in tqdm(as_completed(futures), total = len(futures), desc ="PRE-PROCESSING IMAGES", unit = "file"):
                 files, out_filename = args[future]
-                try:
-                    future.result()
-                except Exception as e:
-                    # if we wanted to retry, we could get the original URL for this file
-                    # by calling meta[files[0].name]
-                    _retry_file(files, dest, meta[files[0].name])
-
-                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
-                    traceback.print_exc()
-                    continue
-
-                # Adjust the metadata filename to key off the output file rather than the input.
                 out_meta = meta.pop(files[0].name)
-
                 if len(files) > 1: # the viirs paired file, if viirs
                     out_meta['url'] = [
                         out_meta['url'],
                         meta.pop(files[1].name)['url']
                     ]
 
+                try:
+                    future.result()
+                except Exception as e:
+                    # if we wanted to retry, we could get the original URL for this file
+                    # by calling meta[files[0].name]
+                    _retry_file(files, dest, out_meta)
+
+                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
+                    traceback.print_exc()
+                    continue
+
+                # Adjust the metadata filename to key off the output file rather than the input.
                 meta[out_filename] = out_meta
+
             print("Resampling of batch", k + 1, "complete in", time.time() - t1, "seconds")
 
     return meta
@@ -218,9 +218,12 @@ def _retry_file(files, dest, download_meta):
     print("Retrying download/process of file(s):", files)
     out_file = _gen_output_name(dest, files)
     download_files = download_meta['url']
+    if not isinstance(download_files, (list, tuple)):
+        download_files = (download_files, )
+
     # Download one at a time
-    for k, download in enumerate(download_files):
-        download_batch(download, k, 1, dest)
+    for k in range(len(download_files)):
+        download_batch(download_files, k, 1, dest)
 
     try:
         _process_func(files, out_file)
@@ -229,7 +232,7 @@ def _retry_file(files, dest, download_meta):
 
     # Clean up after the attempt
     for file in files:
-        file.unlink()
+        file.unlink(missing_ok = True) # Just make sure it is gone.
 
 
 def load_and_resample(
