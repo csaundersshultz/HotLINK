@@ -183,18 +183,30 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
             # We could do things like retry here if we wanted.
             for future in tqdm(as_completed(futures), total = len(futures), desc ="PRE-PROCESSING IMAGES", unit = "file"):
                 files, out_filename = args[future]
-                out_meta = meta.pop(files[0].name)
-                if len(files) > 1: # the viirs paired file, if viirs
-                    out_meta['url'] = [
-                        out_meta['url'],
-                        meta.pop(files[1].name)['url']
-                    ]
+
+                try:
+                    out_meta = meta.pop(files[0].name)
+                    if len(files) > 1: # the viirs paired file, if viirs
+                        out_meta['url'] = [
+                            out_meta['url'],
+                            meta.pop(files[1].name)['url']
+                        ]
+                except KeyError:
+                    out_meta = None
 
                 try:
                     future.result()
                 except Exception as e:
                     # if we wanted to retry, we could get the original URL for this file
                     # by calling meta[files[0].name]
+                    if out_meta is None:
+                        print(f"Unable to process file {files[0].name}. No download URL found when attempting to retry. Skipping.")
+                        print("ERROR:", e)
+
+                        for file in files:
+                            file.unlink(missing_ok = True)
+                        continue
+
                     _retry_file(files, dest, out_meta)
 
                     print(f"Unable to process file(s) {files} Exception occured:\n{e}")
