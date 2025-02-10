@@ -223,7 +223,7 @@ def _retry_file(files, dest, download_meta):
         download_batch(download, k, 1, dest)
 
     try:
-        result = _process_func(files, out_file)
+        _process_func(files, out_file)
     except Exception as e:
         print("Unable to re-process. Exception occured:", e)
 
