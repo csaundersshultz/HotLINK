@@ -188,7 +188,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
                 except Exception as e:
                     # if we wanted to retry, we could get the original URL for this file
                     # by calling meta[files[0].name]
-                    _retry_file(files, deat, meta[files[0].name])
+                    _retry_file(files, dest, meta[files[0].name])
 
                     print(f"Unable to process file(s) {files} Exception occured:\n{e}")
                     traceback.print_exc()
