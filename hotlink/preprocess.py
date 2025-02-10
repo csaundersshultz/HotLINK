@@ -90,7 +90,9 @@ def download_batch(results, batch, num, dest):
         print('Trying again with 1 thread')
         earthaccess.download(to_download, dest, threads=1)
 
+_process_func: functools.partial = None
 def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
+    global _process_func
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
 
@@ -136,8 +138,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
         reader = 'modis_l1b'
         datasets = ['21', '32']
 
-    # Because we can. Not really, but keeps the submit call later cleaner.
-    process_func = functools.partial(load_and_resample, datasets, reader, area)
+    _process_func = functools.partial(load_and_resample, datasets, reader, area)
 
     with ProcessPoolExecutor() as executor:
         # Download/process in batches of no more than batchsize files to save disk space
@@ -147,7 +148,7 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
             futures = []
             args = {}
 
-            print(f'Downloading files (batch {k + 1}/{batches})')            
+            print(f'Downloading files (batch {k + 1}/{batches})')
             download_batch(results, k, num, folder)
 
             # VIIRS files are paired
@@ -172,11 +173,9 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
             print("Downloading batch", k + 1, "complete. Beginning resampling.")
 
             for files in tqdm(input_files, total = len(input_files), desc = "SUBMITTING TASKS", unit = "file"):
-                name_parts = files[0].stem.split('.')
-                img_date = datetime.strptime(".".join(name_parts[1:3]), 'A%Y%j.%H%M')
-                out_file =  dest / img_date.strftime('%Y%m%d_%H%M.npy')
+                out_file =  _gen_output_name(dest, files)
 
-                future = executor.submit(process_func, files, out_file)
+                future = executor.submit(_process_func, files, out_file)
                 futures.append(future)
                 args[future] = (files, out_file.name)
 
@@ -189,6 +188,8 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
                 except Exception as e:
                     # if we wanted to retry, we could get the original URL for this file
                     # by calling meta[files[0].name]
+                    _retry_file(files, deat, meta[files[0].name])
+
                     print(f"Unable to process file(s) {files} Exception occured:\n{e}")
                     traceback.print_exc()
                     continue
@@ -207,6 +208,30 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
 
     return meta
 
+def _gen_output_name(dest, files):
+    name_parts = files[0].stem.split('.')
+    img_date = datetime.strptime(".".join(name_parts[1:3]), 'A%Y%j.%H%M')
+    out_file =  dest / img_date.strftime('%Y%m%d_%H%M.npy')
+    return out_file
+
+def _retry_file(files, dest, download_meta):
+    print("Retrying download/process of file(s):", files)
+    out_file = _gen_output_name(dest, files)
+    download_files = download_meta['url']
+    # Download one at a time
+    for k, download in enumerate(download_files):
+        download_batch(download, k, 1, dest)
+
+    try:
+        result = _process_func(files, out_file)
+    except Exception as e:
+        print("Unable to re-process. Exception occured:", e)
+
+    # Clean up after the attempt
+    for file in files:
+        file.unlink()
+
+
 def load_and_resample(
     datasets: Sequence[str],
     reader: str,
@@ -216,6 +241,7 @@ def load_and_resample(
 ) -> None:
     """
     Load datasets, resample to a specified area, and save the combined data to a file.
+    Resampled data file will be in UTM.
 
     Parameters
     ----------
