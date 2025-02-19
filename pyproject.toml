@@ -33,6 +33,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
+
 packages = ['hotlink']
 py-modules = []
 
