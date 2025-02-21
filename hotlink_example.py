@@ -7,7 +7,7 @@ if __name__ == "__main__":
     vent = "Shishaldin" # Can also be defined as a latitude, longitude pair for more precise positioning.
     elevation = 2857 # Used to calculate solar zenith/azimuth angles
 
-    dates = ("2019-07-30", "2019-07-31 00:00") # YYYY-MM-DD HH:MM, from to.
+    dates = ("2019-07-29", "2019-07-31 00:00") # YYYY-MM-DD HH:MM, from to.
 
     # Options: modis,viirs,viirsj2,viirsj1,viirsn
     sensor = 'viirs'

@@ -336,6 +336,7 @@ def get_results(
     # make sure the data directory exists
     data_path.mkdir(exist_ok = True)
 
+    print("Searching for files to download...")
     download_meta = preprocess.download_preprocess(
         dates,
         vent,
@@ -394,6 +395,7 @@ def get_results(
     predict_data = support_functions.crop_center(n_data, crop_dimensions=(1, 2))
     predict_data = predict_data.reshape(n_data.shape[0], 64, 64, 2)
     
+    print("Predicting hotspots...")
     prediction = model.predict(predict_data) #shape=[batch_size, 24, 24, 3], for 3 predicted classes:background, hotspot-adjacent, and hotspot
     
     # use hysteresis thresholding to generate a binary map of hotspot pixels
@@ -426,8 +428,8 @@ def get_results(
         'Probability TIFF': [],
     }
     
-    # loop...
-    def process_image(idx):
+    # loop...could we speed things up by using threading?
+    for idx in range(img_data.shape[0]):
         img_file = data_files[idx]
         image_date = img_dates[idx]        
         result['Data File'].append(img_file.name)
@@ -516,18 +518,6 @@ def get_results(
         result['Day/Night Flag'].append(day_night)
         result['Solar Zenith'].append(round(sol_zenith, 1))
         result['Solar Azimuth'].append(round(sol_azimuth, 1))
-        
-    for idx in range(img_data.shape[0]):
-        process_image(idx)
-    
-    # # Using the thread pool here provides a very modest (~16% in my testing) speedup.
-    # # It might not be worth the complexity for smaller image sets, but could help a bit with
-    # # larger sets. ProcessPoolExecutor is horrible here, due to the need for
-    # # every individual process to import/set up tensorflow, coupled with
-    # # inter-process communications.
-    # process_func = partial(process_image, vent, elevation, model, output_dir)
-    # with ThreadPoolExecutor() as executor:
-        # results = executor.map(process_func, data_files)
 
     results = pandas.DataFrame(result)
     meta['Result Count'] = len(results)
