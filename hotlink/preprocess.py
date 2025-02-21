@@ -1,6 +1,7 @@
 import functools
 import math
 import pathlib
+import shutil
 import time
 import traceback
 import warnings
@@ -16,6 +17,8 @@ from datetime import datetime
 from pyresample import geometry
 from satpy import Scene
 from tqdm import tqdm
+
+from .process import _gen_date_and_dir
 
 def area_definition(area_id, lat_lon,sat='modis'):
     utm_x, utm_y, utm_zone, utm_lat_band = utm.from_latlon(lat_lon[0], lat_lon[1])
@@ -91,31 +94,59 @@ def download_batch(results, batch, num, dest):
         earthaccess.download(to_download, dest, threads=1)
 
 _process_func: functools.partial = None
-def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
+def download_preprocess(
+    dates,
+    vent,
+    sat='modis',
+    batchsize=200,
+    folder='./data',
+    output=pathlib.Path('./Output')
+):
     global _process_func
+    dest = pathlib.Path(folder)    
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
 
     # TODO: Ensure that results and results2 actually match up 1:1 for VIIRS
     results, results2 = make_query(dates,bounding_box,sat)
-    if results2:
-        # "flatten" the two results lists, keeping paired files together so they download
-        # in the same batch
-        results = [
-            item
-            for pair in zip(results, results2)
-            for item in pair
-        ]
+    if results2 and len(results) == len(results2):
+        results = list(zip(results, results2))
+    else:
+        # Just to keep the data structures identical
+        results = list(zip(results))
 
-    meta = {
-        pathlib.Path(x.data_links()[0]).name:
-        {
-            'satelite': x['umm']['Platforms'][0]['ShortName'],
-            'url': x.data_links()[0],
-            'DayNightFlag': x['umm']['DataGranule']['DayNightFlag'],
-        }
-        for x in results
-    }
+    to_download = []
+    meta = {}
+    for items in results:
+        item_names =  [pathlib.Path(x.data_links()[0]) for x in items]
+        item_links = [x.data_links()[0] for x in items]
+        meta_value = {
+            'satelite': items[0]['umm']['Platforms'][0]['ShortName'],
+            'url': item_links, # for all items
+            'DayNightFlag': items[0]['umm']['DataGranule']['DayNightFlag'],
+        }        
+            
+        processed_name: pathlib.Path = _gen_output_name(dest, item_names)
+        meta[processed_name.name] = meta_value # Left over from the for loop above.
+        
+        # See if we have downloaded and pre-processed, 
+        # but not fully processed these files
+        if processed_name.exists():
+            # We already have this file, no need to download it again.
+            continue
+        
+        # See if we have downloaded AND PROCESSED this file.
+        _, out_dir = _gen_date_and_dir(processed_name, output)
+        out_file = out_dir / processed_name.name
+        if out_file.exists():
+            #  We have this in the final output directory, move it into 
+            # the "to be processed" directory for re-processing.
+            shutil.move(str(out_file), str(processed_name))
+            continue
+        
+        to_download.extend(items)
+        
+    results = to_download
 
     if sat in ['viirsj1','viirsj2','viirsn']:
         sat='viirs'
@@ -129,7 +160,6 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
     print(f"Found {num_results} files. Downloading in {batches} batches of {num}")
 
     area=area_definition('name',vent,sat)
-    dest = pathlib.Path(folder)
 
     if sat == 'viirs':
         reader = 'viirs_l1b'
@@ -180,26 +210,15 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
                 args[future] = (files, out_file.name)
 
             # Verify completion of all resampling operations.
-            # We could do things like retry here if we wanted.
             for future in tqdm(as_completed(futures), total = len(futures), desc ="PRE-PROCESSING IMAGES", unit = "file"):
                 files, out_filename = args[future]
-
-                try:
-                    out_meta = meta.pop(files[0].name)
-                    if len(files) > 1: # the viirs paired file, if viirs
-                        out_meta['url'] = [
-                            out_meta['url'],
-                            meta.pop(files[1].name)['url']
-                        ]
-                except KeyError:
-                    out_meta = None
 
                 try:
                     future.result()
                 except Exception as e:
                     # if we wanted to retry, we could get the original URL for this file
                     # by calling meta[files[0].name]
-                    if out_meta is None:
+                    if out_filename not in meta:
                         print(f"Unable to process file {files[0].name}. No download URL found when attempting to retry. Skipping.")
                         print("ERROR:", e)
 
@@ -207,14 +226,11 @@ def download_preprocess(dates,vent,sat='modis',batchsize=200, folder='./data'):
                             file.unlink(missing_ok = True)
                         continue
 
-                    _retry_file(files, dest, out_meta)
+                    _retry_file(files, dest, meta[out_filename])
 
                     print(f"Unable to process file(s) {files} Exception occured:\n{e}")
                     traceback.print_exc()
                     continue
-
-                # Adjust the metadata filename to key off the output file rather than the input.
-                meta[out_filename] = out_meta
 
             print("Resampling of batch", k + 1, "complete in", time.time() - t1, "seconds")
 

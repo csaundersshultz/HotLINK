@@ -18,6 +18,12 @@ from hotlink.load_hotlink_model import load_hotlink_model
 from hotlink import preprocess, support_functions
 from skimage.filters import apply_hysteresis_threshold
 
+def _gen_date_and_dir(input_filename, base_dir):
+    image_date = datetime.strptime(input_filename.stem, '%Y%m%d_%H%M')
+    out_dir = base_dir / str(image_date.year) / str(image_date.month)
+    
+    return (image_date, out_dir)
+    
 def process_image(
     vent: tuple[float, float],
     elevation: int,
@@ -68,10 +74,11 @@ def process_image(
     - Uses hysteresis thresholding to refine hotspot detection.
     - Deletes the input file after processing.
     """
-    filename = file.name
-    image_date = datetime.strptime(file.stem, '%Y%m%d_%H%M')
-
-    out_dir = out_dir / str(image_date.year) / str(image_date.month)
+    # Better safe than sorry
+    file = pathlib.Path(file)
+        
+    image_date, out_dir = _gen_date_and_dir(file, out_dir)
+    
     out_dir.mkdir(parents = True, exist_ok = True)
 
     data = numpy.load(file)
@@ -178,7 +185,7 @@ def process_image(
         'Pixels Above 0.5 Probability': prob_above_05,
         'Solar Zenith': round(sol_zenith, 1),
         'Solar Azimuth': round(sol_azimuth, 1),
-        'Data File': filename,
+        'Data File': file.name,
         'MIR Image': str(mir_image),
         'TIR Image': str(tir_image),
         'Probability TIFF': str(geotiff_file),
@@ -311,7 +318,12 @@ def get_results(
     # make sure the data directory exists
     data_path.mkdir(exist_ok = True)
 
-    download_meta = preprocess.download_preprocess(dates, vent, sensor, folder = data_path)
+    download_meta = preprocess.download_preprocess(
+        dates,
+        vent,
+        sensor,
+        folder = data_path,
+        output=output_dir)
     print("Image files processed. Beginning calculations")
 
     data_files = list(data_path.glob('*.npy'))
