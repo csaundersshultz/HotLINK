@@ -109,6 +109,7 @@ def download_preprocess(
 
     # TODO: Ensure that results and results2 actually match up 1:1 for VIIRS
     results, results2 = make_query(dates,bounding_box,sat)
+    num_hits = len(results) + len(results2)
     if results2 and len(results) == len(results2):
         results = list(zip(results, results2))
     else:
@@ -157,7 +158,7 @@ def download_preprocess(
     batches = math.ceil(num_results / batchsize)
     num = min(num_results, batchsize) # number of images per batch
 
-    print(f"Found {num_results} files. Downloading in {batches} batches of {num}")
+    print(f"Found {num_hits} files. Need to download {num_results}. Downloading in {batches} batches of {num}")
 
     area=area_definition('name',vent,sat)
 
