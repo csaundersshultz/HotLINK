@@ -7,16 +7,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hotlink"
-version = "1.4"
+version = "1.5"
 description = "the HOTspot Learning and Identification NetworK"
 readme = "README.md"
-requires-python = ">= 3.8"
+requires-python = ">=3.11, <3.12"
 authors = [
     {name = "Pablo Saunders-Shultz", email = "csaundersshultz@gmail.com"},
     {name = "Mario Fernando Angarita Vargas", email = "mfangaritasr@alaska.edu"}
 ]
 dependencies = [
-    "numpy",
+    "numpy<2",
     "pandas",
     "ephem",
     "earthaccess",
@@ -24,17 +24,22 @@ dependencies = [
     "scipy",
     "scikit-image",
     "Pillow",
-    "tensorflow<=2.15",
+    "tensorflow>=2.15,<2.16",
     "matplotlib",
     "satpy[modis_l1b]",
     "satpy[viirs_l1b]",
-    "utm"
+    "utm",
+    "rasterio"
 ]
 
 [tool.setuptools]
-#packages = ['find']
+
+packages = ['hotlink']
 py-modules = []
 
 [project.urls]
 documentation = "https://github.com/csaundersshultz/HotLINK"
 repository = "https://github.com/csaundersshultz/HotLINK"
+
+[project.scripts]
+hotlink = "hotlink.cli:main"
