@@ -120,7 +120,6 @@ def download_preprocess(
     output=pathlib.Path('./Output')
 ):
     global _process_func
-    from . import wingdbstub
 
     dest = pathlib.Path(folder)
     lat,lon=vent
