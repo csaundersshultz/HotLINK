@@ -20,7 +20,7 @@ if __name__ == "__main__":
         elevation,
         dates,
         sensor,
-        out_dir = f'/Volumes/Transfer/Output/{sensor}'
+        out_dir = f'/Volumes/Transfer/HotLINK/Output/{sensor}'
     )
 
     print(results)
