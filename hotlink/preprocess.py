@@ -121,6 +121,11 @@ def download_preprocess(
 ):
     global _process_func
 
+    try:
+        from . import wingdbstub
+    except ImportError:
+        pass # This is just for my debugging. If the file doesn't exist, that's fine.
+
     dest = pathlib.Path(folder)
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
@@ -142,28 +147,31 @@ def download_preprocess(
 
     to_download = []
     meta = {}
+
+    existing_processed = set(dest.iterdir())  # Set of Path objects in dest
+    existing_output = {p.name for p in output.rglob("*.npy")}  # Set of filenames in output (recursive)
+
     for items in results:
-        item_names =  [pathlib.Path(x.data_links()[0]) for x in items]
         item_links = [x.data_links()[0] for x in items]
-        meta_value = {
+        item_names =  [pathlib.Path(x) for x in item_links]
+        processed_name: pathlib.Path = _gen_output_name(dest, item_names)
+
+        meta[processed_name.name] = {
             'satelite': items[0]['umm']['Platforms'][0]['ShortName'],
             'url': item_links, # for all items
             'DayNightFlag': items[0]['umm']['DataGranule']['DayNightFlag'],
         }
 
-        processed_name: pathlib.Path = _gen_output_name(dest, item_names)
-        meta[processed_name.name] = meta_value # Left over from the for loop above.
-
         # See if we have downloaded and pre-processed,
         # but not fully processed these files
-        if processed_name.exists():
+        if processed_name in existing_processed:
             # We already have this file, no need to download it again.
             continue
 
         # See if we have downloaded AND PROCESSED this file.
-        _, out_dir = _gen_date_and_dir(processed_name, output)
+        _, out_dir = _gen_date_and_dir(processed_name, output, return_date = False)
         out_file = out_dir / processed_name.name
-        if out_file.exists():
+        if out_file.name in existing_output:
             #  We have this in the final output directory, move it into
             # the "to be processed" directory for re-processing.
             shutil.move(str(out_file), str(processed_name))
@@ -195,14 +203,11 @@ def download_preprocess(
 
     _process_func = functools.partial(load_and_resample, datasets, reader, area)
 
-    with ProcessPoolExecutor() as executor:
+    with ProcessPoolExecutor(max_workers = 4) as executor:
         # Download/process in batches of no more than batchsize files to save disk space
         # Each file takes around 200MB of space, so 200 files ~=40GB disk space. Processed
         # files are much smaller.
         for k in range(batches):
-            futures = []
-            args = {}
-
             print(f'Downloading files (batch {k + 1}/{batches})')
             download_batch(results, k, num, folder)
 
@@ -227,34 +232,49 @@ def download_preprocess(
             t1 = time.time()
             print("Downloading batch", k + 1, "complete. Beginning resampling.")
 
-            for files in tqdm(input_files, total = len(input_files), desc = "SUBMITTING TASKS", unit = "file"):
+            futures = [None] * len(input_files) # pre-allocte for a small speedup. Because, why not?
+            args = {}
+
+            for idx, files in enumerate(tqdm(
+                input_files,
+                total = len(input_files),
+                desc = "SUBMITTING TASKS",
+                unit = "file"
+            )):
                 out_file =  _gen_output_name(dest, files)
 
                 future = executor.submit(_process_func, files, out_file)
-                futures.append(future)
+                futures[idx] = future
                 args[future] = (files, out_file.name)
 
             # Verify completion of all resampling operations.
-            for future in tqdm(as_completed(futures), total = len(futures), desc ="PRE-PROCESSING IMAGES", unit = "file"):
+            for future in tqdm(
+                as_completed(futures),
+                total = len(futures),
+                desc ="PRE-PROCESSING IMAGES",
+                unit = "file"
+            ):
                 files, out_filename = args[future]
 
                 try:
                     future.result()
                 except Exception as e:
-                    # if we wanted to retry, we could get the original URL for this file
-                    # by calling meta[files[0].name]
+                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
+                    for file in files:
+                        file.unlink(missing_ok = True)
+
                     if out_filename not in meta:
                         print(f"Unable to process file {files[0].name}. No download URL found when attempting to retry. Skipping.")
-                        print("ERROR:", e)
-
-                        for file in files:
-                            file.unlink(missing_ok = True)
                         continue
 
-                    _retry_file(files, dest, meta[out_filename])
+                    try:
+                        _retry_file(files, dest, meta[out_filename])
+                    except Exception as e2:
+                        # In theory, this will never be called, as exceptions should be handled
+                        # within the _retry_file function. However, if one slips through,
+                        # handle it here.
+                        print(f"Unable to retry file. Retry failed with exception: {e2}")
 
-                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
-                    traceback.print_exc()
                     continue
 
             print("Resampling of batch", k + 1, "complete in", time.time() - t1, "seconds")
@@ -269,23 +289,25 @@ def _gen_output_name(dest, files):
 
 def _retry_file(files, dest, download_meta):
     print("Retrying download/process of file(s):", files)
-    out_file = _gen_output_name(dest, files)
-    download_files = download_meta['url']
-    if not isinstance(download_files, (list, tuple)):
-        download_files = (download_files, )
-
-    # Download one at a time
-    for k in range(len(download_files)):
-        download_batch(download_files, k, 1, dest)
-
     try:
-        _process_func(files, out_file)
-    except Exception as e:
-        print("Unable to re-process. Exception occured:", e)
+        out_file = _gen_output_name(dest, files)
+        download_files = download_meta['url']
+        if not isinstance(download_files, (list, tuple)):
+            download_files = (download_files, )
 
-    # Clean up after the attempt
-    for file in files:
-        file.unlink(missing_ok = True) # Just make sure it is gone.
+        # Download one at a time
+        for k in range(len(download_files)):
+            download_batch(download_files, k, 1, dest)
+
+        try:
+            _process_func(files, out_file)
+        except Exception as e:
+            print("Unable to re-process. Exception occured:", e)
+
+    finally:
+        # Clean up after the attempt
+        for file in files:
+            file.unlink(missing_ok = True) # Just make sure it is gone.
 
 
 def load_and_resample(
