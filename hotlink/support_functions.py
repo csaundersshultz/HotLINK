@@ -5,7 +5,7 @@ file for storing support functions used in pre- and post-processing for hotlink
 
 @author: Pablo Saunders-Shultz
 """
-#IMPORTS
+# IMPORTS
 
 import json
 import urllib
@@ -22,19 +22,19 @@ from skimage.transform import rescale
 import matplotlib.pyplot as plt
 
 
-
 """
 PRE-Processing Functions
 """
 
-#NORMALIZATION VARIABLES
-#Values obtained from any VIIRS l1b file, by using SCALE and OFFSET factors
-#to convert min and max integer values to radiance values.
-#See VIIRS L1b user guide for more information
+# NORMALIZATION VARIABLES
+# Values obtained from any VIIRS l1b file, by using SCALE and OFFSET factors
+# to convert min and max integer values to radiance values.
+# See VIIRS L1b user guide for more information
 VIIRS_MIR_MIN_RAD = 0.0015104711801057938
 VIIRS_MIR_MAX_RAD = 3.9207917784696003
 VIIRS_TIR_MIN_RAD = 0.13924616311648136
 VIIRS_TIR_MAX_RAD = 32.78489204255699
+
 
 def normalize(img, min_rad, max_rad, fill_nan=True):
     """
@@ -58,12 +58,17 @@ def normalize(img, min_rad, max_rad, fill_nan=True):
     # Fill missing values if specified
     if fill_nan:
         min_observed = np.nanmin(img)  # Find the minimum observed value
-        img[np.isnan(img)] = min_observed  # Replace missing values with the minimum non-missing value
+        img[np.isnan(img)] = (
+            min_observed  # Replace missing values with the minimum non-missing value
+        )
 
     # Perform normalization
-    normalized = (img - min_rad) / (max_rad - min_rad + 0.00000001)  # Add infinitesimal to avoid divide by zero
+    normalized = (img - min_rad) / (
+        max_rad - min_rad + 0.00000001
+    )  # Add infinitesimal to avoid divide by zero
 
     return normalized
+
 
 def normalize_MIR(img, fill_nan=True):
     """
@@ -78,7 +83,9 @@ def normalize_MIR(img, fill_nan=True):
     """
 
     # Utilize the normalize function to perform MIR image normalization
-    return normalize(img, min_rad=VIIRS_MIR_MIN_RAD, max_rad=VIIRS_MIR_MAX_RAD, fill_nan=fill_nan)
+    return normalize(
+        img, min_rad=VIIRS_MIR_MIN_RAD, max_rad=VIIRS_MIR_MAX_RAD, fill_nan=fill_nan
+    )
 
 
 def normalize_TIR(img, fill_nan=True):
@@ -92,7 +99,10 @@ def normalize_TIR(img, fill_nan=True):
     Returns:
     - normalized: Normalized MIR image array.
     """
-    return normalize(img, min_rad=VIIRS_TIR_MIN_RAD, max_rad=VIIRS_TIR_MAX_RAD, fill_nan=fill_nan)
+    return normalize(
+        img, min_rad=VIIRS_TIR_MIN_RAD, max_rad=VIIRS_TIR_MAX_RAD, fill_nan=fill_nan
+    )
+
 
 def crop_center(img, size=64, crop_dimensions=(0, 1)):
     """
@@ -128,12 +138,15 @@ def crop_center(img, size=64, crop_dimensions=(0, 1)):
     return cropped
 
 
-
 """
 Post-processing functions
 radiative_power()
 brightness_temperature_from_radiance()
 """
+VIIRS_MIR_RP_CONSTANT = 17.34
+# TODO
+# MODIS_MIR_RP_CONSTANT = 18.something #I do not remember. I'll check my old scripts.
+
 
 def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
     """
@@ -155,7 +168,9 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
 
     values = np.array(L_mir)  # Raw radiance values
     selem = generate_binary_structure(2, 2)  # 3x3 matrix filled with TRUE
-    label_img = label(active_map, connectivity=2)  # Assigns each pixel an integer group number (no change for binary mask, but kept anyway)
+    label_img = label(
+        active_map, connectivity=2
+    )  # Assigns each pixel an integer group number (no change for binary mask, but kept anyway)
 
     Apix = cellsize**2  # Area of the pixels
     counter = 0
@@ -166,7 +181,9 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
     #   - create an image with just that region
     #   - dilate and remove the region to extract background
     #   - Then for each coordinate in the region, calculate RP and sum for the region
-    for region in regionprops(label_img):  # Returns various properties of each region in label_img
+    for region in regionprops(
+        label_img
+    ):  # Returns various properties of each region in label_img
         subimage = np.zeros(active_map.shape)
         subimage[region.coords[:, 0], region.coords[:, 1]] = 1
         dilated = dilation(subimage, selem)
@@ -179,7 +196,9 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
         for row in region.coords:
             L4alert = values[row[0], row[1]]  # Find MIR
             dL4pix = L4alert - bg  # Find above-background radiance
-            RPpix = rp_constant * Apix * dL4pix  # Convert to radiative power for 3.8 um (Wooster et al., 2003)
+            RPpix = (
+                rp_constant * Apix * dL4pix
+            )  # Convert to radiative power for 3.8 um (Wooster et al., 2003)
             rp[counter] = rp[counter] + RPpix  # Sum RP for each region
 
         counter = counter + 1
@@ -190,10 +209,16 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
 
 # Constants for calculating brightness temperature
 h = 6.626e-34  # Planck's constant, Joules*Seconds
-c = 2.99e+8    # Speed of light, meters/second
-k = 1.38e-23   # Boltzmann constant, Joules/Kelvin
+c = 2.99e8  # Speed of light, meters/second
+k = 1.38e-23  # Boltzmann constant, Joules/Kelvin
 
-def brightness_temperature(L, wl=3.74e-6):
+VIIRS_MIR_WL = 3.74e-6  # wavelength in meters
+VIIRS_TIR_WL = 11.45e-6
+MODIS_MIR_WL = 3.959e-6
+MODIS_TIR_WL = 12.02e-6
+
+
+def brightness_temperature(L, wl=VIIRS_MIR_WL):
     """
     Calculates brightness temperature from radiance values.
 
@@ -212,16 +237,24 @@ def brightness_temperature(L, wl=3.74e-6):
     """
     K2 = (h * c) / (wl * k)
     K1 = (2.0 * h * (c**2)) / (wl**5)
-    BT = K2 / (np.log1p(K1 / L)) # Use np.log1p to avoid issues with K1/L close to zero, equivalent to np.log(1 + (K1/L))
-
+    BT = K2 / (
+        np.log1p(K1 / L)
+    )  # Use np.log1p to avoid issues with K1/L close to zero, equivalent to np.log(1 + (K1/L))
 
     return BT
 
 
-def plot_detection(radiance_image, mask,
-                           title='', save_filename=None,
-                           figsize=(4,4), dpi=150,
-                           cmap='viridis', outline_color='red', outline_thickness=1):
+def plot_detection(
+    radiance_image,
+    mask,
+    title="",
+    save_filename=None,
+    figsize=(4, 4),
+    dpi=150,
+    cmap="viridis",
+    outline_color="red",
+    outline_thickness=1,
+):
     """
     Display a radiance image with highlighted hotspots using a binary mask.
 
@@ -246,7 +279,7 @@ def plot_detection(radiance_image, mask,
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
     # Display the resized radiance image with specified colormap and interpolation
-    im = ax.imshow(radiance_image_resized, cmap=cmap, interpolation='none')
+    im = ax.imshow(radiance_image_resized, cmap=cmap, interpolation="none")
     plt.colorbar(im, shrink=0.8, label="MIR radiance")
 
     # Find contours in the resized mask
@@ -254,26 +287,31 @@ def plot_detection(radiance_image, mask,
 
     # Plot contours on the image
     for contour in contours:
-        ax.plot(contour[:, 1], contour[:, 0], linewidth=outline_thickness, color=outline_color)
+        ax.plot(
+            contour[:, 1],
+            contour[:, 0],
+            linewidth=outline_thickness,
+            color=outline_color,
+        )
 
     # Configure plot properties
-    ax.axis('off')
+    ax.axis("off")
     ax.set_title(title)
 
     # Save the plot as a PNG if a filename is provided
     if save_filename:
-        plt.savefig(save_filename, bbox_inches='tight', pad_inches=0.1, dpi=300)
+        plt.savefig(save_filename, bbox_inches="tight", pad_inches=0.1, dpi=300)
 
     # Display the plot
     plt.show()
-
 
 
 """
 Miscellaneous support functions
 """
 
-def get_dn(datetime, volcano_lat, volcano_lng, volcano_elevation, twilight='CIVIL'):
+
+def get_dn(datetime, volcano_lat, volcano_lng, volcano_elevation, twilight="CIVIL"):
     """
     Determines whether it is daytime (D) or nighttime (N) at a given location and time.
 
@@ -292,7 +330,7 @@ def get_dn(datetime, volcano_lat, volcano_lng, volcano_elevation, twilight='CIVI
     - default twilight is 'CIVIL', for d/n threshold as the sun is 6º below the horizon
     """
     obs = ephem.Observer()
-    obs.lat = str(volcano_lat) #Observer coordinates set using strings
+    obs.lat = str(volcano_lat)  # Observer coordinates set using strings
     obs.lon = str(volcano_lng)
     obs.elevation = volcano_elevation  # Elevation in meters
     obs.date = datetime
@@ -302,17 +340,19 @@ def get_dn(datetime, volcano_lat, volcano_lng, volcano_elevation, twilight='CIVI
     sun_angle = np.rad2deg(float(sun.alt))
 
     # Set threshold for different twilight types
-    if twilight.upper() == 'CIVIL':
+    if twilight.upper() == "CIVIL":
         threshold = -6
-    elif twilight.upper() == 'NAUTICAL':
+    elif twilight.upper() == "NAUTICAL":
         threshold = -12
-    elif twilight.upper() == 'ASTRONOMICAL':
+    elif twilight.upper() == "ASTRONOMICAL":
         threshold = -18
     else:
-        raise ValueError("Invalid twilight type. Choose 'CIVIL', 'NAUTICAL', or 'ASTRONOMICAL'.")
+        raise ValueError(
+            "Invalid twilight type. Choose 'CIVIL', 'NAUTICAL', or 'ASTRONOMICAL'."
+        )
 
     # Set DN_flag to "D" for daytime or "N" for nighttime
-    DN_flag = (sun_angle >= threshold)
+    DN_flag = sun_angle >= threshold
 
     if DN_flag:
         return "D"
@@ -334,7 +374,7 @@ def get_solar_coords(datetime, volcano_lat, volcano_lng, volcano_elevation):
     - solar_coords: Tuple containing solar zenith and azimuth angles in degrees.
     """
     obs = ephem.Observer()
-    obs.lat = str(volcano_lat) #Observer coordinates set using strings
+    obs.lat = str(volcano_lat)  # Observer coordinates set using strings
     obs.lon = str(volcano_lng)
     obs.elevation = volcano_elevation
     obs.date = datetime
@@ -368,14 +408,12 @@ def haversine_np(lon1, lat1, lon2, lat2) -> np.ndarray:
     dlon = lon2 - lon1
     dlat = lat2 - lat1
 
-    a = (
-        np.sin(dlat / 2.0) ** 2
-        + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
-    )
+    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
 
     c = 2 * np.arcsin(np.sqrt(a))
     km = 6367 * c
     return km
+
 
 def load_volcanoes() -> pandas.DataFrame:
     """
@@ -408,27 +446,30 @@ def load_volcanoes() -> pandas.DataFrame:
     KeyError
         If the expected keys are missing from the API response.
     """
-    url = 'https://volcanoes.usgs.gov/vsc/api/volcanoApi/geojson'
+    url = "https://volcanoes.usgs.gov/vsc/api/volcanoApi/geojson"
     with urllib.request.urlopen(url) as response:
         volcs = json.load(response)
 
-    features = volcs['features']
+    features = volcs["features"]
     data = [
         {
-            "lon": feature['geometry']['coordinates'][0],
-            "lat": feature['geometry']['coordinates'][1],
-            "name": feature['properties']['volcanoName'],
-            "id": feature['properties']['volcanoCd'],
+            "lon": feature["geometry"]["coordinates"][0],
+            "lat": feature["geometry"]["coordinates"][1],
+            "name": feature["properties"]["volcanoName"],
+            "id": feature["properties"]["volcanoCd"],
         }
         for feature in features
-        if feature['properties']['volcanoCd']
+        if feature["properties"]["volcanoCd"]
     ]
 
     df = pandas.DataFrame(data)
     return df
 
+
 def latlon_to_utm(lat, lon):
     """Convert latitude/longitude to UTM coordinates."""
-    proj_utm = Proj(proj="utm", zone=int((lon + 180) / 6) + 1, ellps="WGS84", datum="WGS84")
+    proj_utm = Proj(
+        proj="utm", zone=int((lon + 180) / 6) + 1, ellps="WGS84", datum="WGS84"
+    )
     x, y = proj_utm(lon, lat)
     return x, y, proj_utm.crs
