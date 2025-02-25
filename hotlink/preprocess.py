@@ -1,9 +1,14 @@
 import functools
+import logging
+
+# Stop satpy from printing tracebacks. It clutters out output,
+# and is completly useless in production.
+logging.getLogger('satpy').setLevel(logging.CRITICAL)
+
 import math
 import pathlib
 import shutil
 import time
-import traceback
 import warnings
 
 from collections.abc import Sequence
@@ -303,6 +308,8 @@ def _retry_file(files, dest, download_meta):
             _process_func(files, out_file)
         except Exception as e:
             print("Unable to re-process. Exception occured:", e)
+        else:
+            print("File succesfully processed on retry")
 
     finally:
         # Clean up after the attempt
