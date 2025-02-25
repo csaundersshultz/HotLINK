@@ -11,6 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import earthaccess
 import numpy as np
+import pandas
 import utm
 
 from datetime import datetime
@@ -93,6 +94,22 @@ def download_batch(results, batch, num, dest):
         print('Trying again with 1 thread')
         earthaccess.download(to_download, dest, threads=1)
 
+
+# Define the pairing map
+viirs_pair_map = {"VNP02IMG": "VNP03IMG", "VJ102IMG": "VJ103IMG", "VJ202IMG": "VJ203IMG"}
+
+# Function to get the match key, with substitution for list1
+def get_match_key(granule, substitute_prefix=False):
+    url = granule.data_links()[0]
+    filename = url.split("/")[-1]  # Extract filename from URL
+    parts = filename.split(".")
+    # If substituting (for list1), map the prefix
+    if substitute_prefix and parts[0] in viirs_pair_map:
+        parts[0] = viirs_pair_map[parts[0]]
+    # Keep everything up to the version, drop processing time and extension
+    match_key = ".".join(parts[:4])  # e.g., VJ103IMG.A2018005.1148.021
+    return match_key
+
 _process_func: functools.partial = None
 def download_preprocess(
     dates,
@@ -103,15 +120,23 @@ def download_preprocess(
     output=pathlib.Path('./Output')
 ):
     global _process_func
-    dest = pathlib.Path(folder)    
+    from . import wingdbstub
+
+    dest = pathlib.Path(folder)
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
 
-    # TODO: Ensure that results and results2 actually match up 1:1 for VIIRS
     results, results2 = make_query(dates,bounding_box,sat)
     num_hits = len(results) + len(results2)
-    if results2 and len(results) == len(results2):
-        results = list(zip(results, results2))
+    if results2:
+        # Match the VIIRS products, checking the file names since the two result
+        # lists may not match 1:1
+        results1_data = [{"granule": g, "match_key": get_match_key(g, substitute_prefix=True)} for g in results]
+        results2_data = [{"granule": g, "match_key": get_match_key(g, substitute_prefix=False)} for g in results2]
+        df1 = pandas.DataFrame(results1_data)
+        df2 = pandas.DataFrame(results2_data)
+        merged = pandas.merge(df1, df2, how="inner", on="match_key", suffixes=("_1", "_2"))
+        results = merged[["granule_1", "granule_2"]].to_numpy().tolist()
     else:
         # Just to keep the data structures identical
         results = list(zip(results))
@@ -125,28 +150,28 @@ def download_preprocess(
             'satelite': items[0]['umm']['Platforms'][0]['ShortName'],
             'url': item_links, # for all items
             'DayNightFlag': items[0]['umm']['DataGranule']['DayNightFlag'],
-        }        
-            
+        }
+
         processed_name: pathlib.Path = _gen_output_name(dest, item_names)
         meta[processed_name.name] = meta_value # Left over from the for loop above.
-        
-        # See if we have downloaded and pre-processed, 
+
+        # See if we have downloaded and pre-processed,
         # but not fully processed these files
         if processed_name.exists():
             # We already have this file, no need to download it again.
             continue
-        
+
         # See if we have downloaded AND PROCESSED this file.
         _, out_dir = _gen_date_and_dir(processed_name, output)
         out_file = out_dir / processed_name.name
         if out_file.exists():
-            #  We have this in the final output directory, move it into 
+            #  We have this in the final output directory, move it into
             # the "to be processed" directory for re-processing.
             shutil.move(str(out_file), str(processed_name))
             continue
-        
+
         to_download.extend(items)
-        
+
     results = to_download
 
     if sat in ['viirsj1','viirsj2','viirsn']:
