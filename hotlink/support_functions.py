@@ -144,8 +144,7 @@ radiative_power()
 brightness_temperature_from_radiance()
 """
 VIIRS_MIR_RP_CONSTANT = 17.34
-# TODO
-# MODIS_MIR_RP_CONSTANT = 18.something #I do not remember. I'll check my old scripts.
+MODIS_MIR_RP_CONSTANT = 18.9 #see hotlink paper, and/or wooster et al. 2003 
 
 
 def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
@@ -156,8 +155,8 @@ def radiative_power(L_mir, active_map, cellsize=371, rp_constant=17.34):
     Parameters:
     - L_mir: np.array of MIR spectral radiance values (not normalized!).
     - active_map: Binary array of the same size as L_mir, with 1s denoting hotspot pixels.
-    - cellsize: Nadir resolution of the sensor in meters. Default is 371 for VIIRS.
-    - rp_constant: Radiative power constant. Default is 17.34 for VIIRS.
+    - cellsize: Nadir resolution of the sensor in meters. Default is 371 for VIIRS. 1000 for MODIS
+    - rp_constant: Radiative power constant. Default is 17.34 for VIIRS. 18.9 for MODIS.
 
     Returns:
     - totalrp: Total radiative power in Watts.
