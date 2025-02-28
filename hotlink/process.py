@@ -7,6 +7,8 @@ from datetime import datetime, UTC
 from functools import partial
 
 import matplotlib
+import tqdm
+
 matplotlib.use('Agg')  # Use the Agg backend
 import matplotlib.pyplot as plt
 import numpy
@@ -18,69 +20,98 @@ from hotlink.load_hotlink_model import load_hotlink_model
 from hotlink import preprocess, support_functions
 from skimage.filters import apply_hysteresis_threshold
 
-def _gen_date_and_dir(
+def _gen_output_dir(
     input_filename: pathlib.Path,
-    base_dir: pathlib.Path,
-    return_date: bool=True
-) -> tuple[datetime|None, pathlib.Path]:
+    base_dir: pathlib.Path
+) -> pathlib.Path:
     """
     Generate an output directory path based on the date in a filename.
 
     Constructs a directory path under `base_dir` using the year and month extracted
-    from `input_filename.stem`. Optionally returns the parsed datetime object for
-    use in further processing.
-
+    from `input_filename.stem`.
+    
     Parameters
     ----------
     input_filename : pathlib.Path
         The input file whose stem contains a date in the format 'YYYYMMDD_HHMM'.
     base_dir : pathlib.Path
         The base directory under which the year/month subdirectories are created.
-    return_date : bool, optional
-        If True (default), parses and returns the datetime object from the filename.
-        If False, returns None instead, improving efficiency when called in a loop
-        where the datetime is not needed.
 
     Returns
     -------
-    tuple
-        A tuple containing:
-        - datetime.datetime or None: The parsed date if `return_date` is True, else None.
-        - pathlib.Path: The constructed output directory (e.g., `base_dir/YYYY/MM`).
+    pathlib.Path: The constructed output directory (e.g., `base_dir/YYYY/MM`).
 
     Examples
     --------
     >>> from pathlib import Path
     >>> file = Path("20231106_1230.npy")
     >>> base = Path("/output")
-    >>> date, dir = _gen_date_and_dir(file, base)
-    >>> print(date, dir)
-    2023-11-06 12:30:00 /output/2023/11
-
-    >>> dir_only = _gen_date_and_dir(file, base, return_date=False)[1]
-    >>> print(dir_only)
+    >>> dir = _gen_output_dir(file, base)
+    >>> print(dir)
     /output/2023/11
     """
-    stem = input_filename.stem
+    # make sure arguments are actually pathlib.Path objects so the rest of the code works.
+    stem = pathlib.Path(input_filename).stem
+    base_dir = pathlib.Path(base_dir)
     out_dir = base_dir / stem[:4] / stem[4:6]
-    image_date = datetime.strptime(stem, '%Y%m%d_%H%M') if return_date else None
-    return (image_date, out_dir)
+    return out_dir
 
 
 lock = threading.Lock()
 def _save_fig(img, out, title):
-    with lock:
-        fig = plt.figure(figsize=(4, 4))
-        plt.imshow(img)
-        plt.colorbar()
-        plt.title(title)
-        fig.savefig(str(out))
-        plt.close(fig)
+# def save_fig(img, out, title, lat_bounds, lon_bounds):
+    # with lock:
+        # fig = plt.figure(figsize=(4, 4))
+        
+        # # Get the extent in the format [left, right, bottom, top]
+        # extent = [lon_bounds[0], lon_bounds[1], lat_bounds[0], lat_bounds[1]]
+        
+        # # Display the image with coordinates
+        # ax = plt.gca()
+        # im = ax.imshow(img, extent=extent, origin='lower')
+        
+        # # Add scale bar (1km)
+        # # Convert distance to decimal degrees (approximately)
+        # # At equator, 1 degree ≈ 111 km, but varies with latitude
+        # lat_mid = (lat_bounds[0] + lat_bounds[1]) / 2
+        # lon_per_km = 1 / (111.32 * np.cos(np.radians(lat_mid)))  # Degrees per km at this latitude
+        
+        # # Add scale bar
+        # from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+        # import matplotlib.font_manager as fm
+        # fontprops = fm.FontProperties(size=8)
+        # scalebar = AnchoredSizeBar(ax.transData,
+                                  # lon_per_km,  # 1 km in decimal degrees
+                                  # '1 km',
+                                  # 'lower right',
+                                  # pad=0.5,
+                                  # color='black',
+                                  # frameon=False,
+                                  # size_vertical=0.005,
+                                  # fontproperties=fontprops)
+        # ax.add_artist(scalebar)
+        
+        # plt.colorbar(im)
+        # plt.title(title)
+        # plt.xlabel('Longitude')
+        # plt.ylabel('Latitude')
+        
+        # fig.savefig(str(out))
+        # plt.close(fig)    
+    fig = plt.figure(figsize=(4, 4))
+    plt.imshow(img)
+    plt.colorbar()
+    plt.title(title)
+    fig.savefig(str(out))
+    plt.close(fig)
 
 def load_data_files(files):
     # Load the first file to determine the shape and store its data
     first_data = numpy.load(files[0])
-    image_dates = [datetime.strptime(files[0].stem, '%Y%m%d_%H%M')]
+    
+    # pre-allocate the image_dates array. Minor speed up, if any, but why not?
+    image_dates = [None] * len(files)
+    image_dates[0] = datetime.strptime(files[0].stem, '%Y%m%d_%H%M')
 
     output_shape = (len(files),) + first_data.shape
     output_array = numpy.empty(output_shape, dtype=first_data.dtype)
@@ -89,11 +120,17 @@ def load_data_files(files):
     output_array[0] = first_data
 
     # Load the remaining files into the output array
-    for i, file_path in enumerate(files[1:], start=1):
+    for i, file_path in enumerate(tqdm.tqdm(
+        files[1:],
+        total = len(files) - 1,
+        desc = "LOADING DATA",
+        unit = "file"
+    ), start =1):
+        # for i, file_path in enumerate(files[1:], start=1):
         data = numpy.load(file_path)
         date = datetime.strptime(file_path.stem, '%Y%m%d_%H%M')
         output_array[i] = data
-        image_dates.append(date)
+        image_dates[i] = date
 
     return output_array, image_dates
 
@@ -220,15 +257,15 @@ def get_results(
 
     # Calculate the GeoTransform for output images
     center_x, center_y, utm_zone, utm_lat_band = utm.from_latlon(*vent)
-    resolution = 1000 if sensor.upper() == 'MODIS' else 375
-    size = 24
-    transform = rasterio.transform.from_origin(center_x - (size / 2) * resolution,
-                                               center_y + (size / 2) * resolution,
-                                               resolution, resolution)
+    # resolution = 1000 if sensor.upper() == 'MODIS' else 375
+    # size = 24
+    # transform = rasterio.transform.from_origin(center_x - (size / 2) * resolution,
+                                               # center_y + (size / 2) * resolution,
+                                               # resolution, resolution)
 
-    hemisphere = hemisphere = " +south" if utm_lat_band < 'N' else ""
+    # hemisphere = hemisphere = " +south" if utm_lat_band < 'N' else ""
 
-    crs = f"+proj=utm +zone={utm_zone}{hemisphere} +datum=WGS84 +units=m +no_defs"
+    # crs = f"+proj=utm +zone={utm_zone}{hemisphere} +datum=WGS84 +units=m +no_defs"
     meta['UTM Zone'] = utm_zone
     meta['UTM Latitude Band'] = utm_lat_band
 
@@ -245,20 +282,23 @@ def get_results(
     nan_mask_tir = numpy.isnan(tir_data)
     nan_mask_mir = numpy.isnan(mir_data)
 
+    # Fill NaN values in the mir/tir arrays with min values for the array
     if nan_mask_mir.any():
+        # create arrays with the minimum value for each image        
         min_mir_observed = numpy.nanmin(mir_data, axis=(1, 2), keepdims=True)
         min_mir_observed = numpy.broadcast_to(min_mir_observed, mir_data.shape)
+        # Fill NaN values with the corresponding minimum values        
         mir_data[nan_mask_mir] = min_mir_observed[nan_mask_mir]
 
     if nan_mask_tir.any():
-        # create arrays with the minimum value for each image
         min_tir_observed = numpy.nanmin(tir_data, axis=(1, 2), keepdims=True)
         min_tir_observed = numpy.broadcast_to(min_tir_observed, tir_data.shape)
-        # Fill NaN values with the corresponding minimum values
         tir_data[nan_mask_tir] = min_tir_observed[nan_mask_tir]
 
     mir_analysis = support_functions.crop_center(mir_data, size=24, crop_dimensions=(1, 2))
     tir_analysis = support_functions.crop_center(tir_data, size=24, crop_dimensions=(1, 2))
+    mir_bt = support_functions.brightness_temperature(mir_analysis, wl=3.74e-06)
+    tir_bt = support_functions.brightness_temperature(tir_analysis, wl=3.74e-06)
 
     n_data = img_data.copy()
     n_data[:, :, :, 0] = support_functions.normalize_MIR(n_data[:, :, :, 0])
@@ -277,131 +317,128 @@ def get_results(
     max_prob = numpy.max(prob_active, axis=(1, 2))
     prob_above_05 = numpy.count_nonzero(prob_active>0.5, axis=(1, 2))
 
+    process_progress = tqdm.tqdm(
+        total=img_data.shape[0],
+        desc="CALCULATING RESULTS"
+    )
 
-
-    result = {
-        'Date': img_dates,
-        'Hotspot Radiative Power (W)': [],
-        'Day/Night Flag': [],
-        'Max Probability': max_prob,
-        'MIR Hotspot Brightness Temperature': [],
-        'MIR Hotspot Max Brightness Temperature': [],
-        'MIR Background Brightness Temperature': [],
-        'TIR Hotspot Brightness Temperature': [],
-        'TIR Hotspot Max Brightness Temperature': [],
-        'TIR Background Brightness Temperature': [],
-        'Number Hotspot Pixels': [],
-        'Pixels Above 0.5 Probability': prob_above_05,
-        'Solar Zenith': [],
-        'Solar Azimuth': [],
-        'Data File': [],
-        'MIR Image': [],
-        'TIR Image': [],
-        'Probability TIFF': [],
-    }
-
-    # loop...could we speed things up by using threading?
-    for idx in range(img_data.shape[0]):
+    def _run_calcs(idx):
+        result = {}
         img_file = data_files[idx]
         image_date = img_dates[idx]
-        result['Data File'].append(img_file.name)
+        
+        result['Data File'] = img_file.name
 
-        # Save MIR and TIR images
-        mir_image = output_dir / f"{img_file.stem}_mir.png"
-        result['MIR Image'].append(str(mir_image))
-        tir_image = output_dir / f"{img_file.stem}_tir.png"
-        result['TIR Image'].append(str(tir_image))
-        _save_fig(
-            mir_data[idx],
-            mir_image,
-            f"Middle Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
-        )
-
-        _save_fig(
-            tir_data[idx],
-            tir_image,
-            f"Thermal Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
-        )
-
-        slice_prob_active = prob_active[idx]
-
-        # Save probability matrix to a tiff file (geo transform will be added later)
-        geotiff_file = output_dir / f"{img_file.stem}_probability.tif"
-        result['Probability TIFF'].append(geotiff_file)
-
-        with rasterio.open(
-            geotiff_file,
-            'w',
-            driver = 'GTiff',
-            height = slice_prob_active.shape[0],
-            width = slice_prob_active.shape[1],
-            count = 1,
-            dtype = slice_prob_active.dtype,
-            crs=crs,
-            transform=transform
-        ) as dst:
-            dst.write(slice_prob_active, 1)
-
-        hotspot_mask = apply_hysteresis_threshold(slice_prob_active, low=0.4, high=0.5).astype('bool')
+        hotspot_mask = apply_hysteresis_threshold(prob_active[idx], low=0.4, high=0.5).astype('bool')
         hotspot_pixels = numpy.count_nonzero(hotspot_mask)
-        result['Number Hotspot Pixels'].append(hotspot_pixels)
+        result['Number Hotspot Pixels'] = hotspot_pixels
 
-        if hotspot_mask.any():
-            rp = support_functions.radiative_power(mir_analysis[idx], hotspot_mask)
-        else:
-            rp = numpy.nan
+        rp = support_functions.radiative_power(mir_analysis[idx], hotspot_mask) if hotspot_mask.any() else numpy.nan
 
-        result['Hotspot Radiative Power (W)'].append(round(rp, 4))
+        result['Hotspot Radiative Power (W)'] = round(rp, 4)
 
         # mir hotspot/background brightness temperature analysis
-        mir_hotspot = mir_analysis[idx][hotspot_mask ]
-        mir_background = mir_analysis[idx][~hotspot_mask]
-        hotspot_mir_bt = support_functions.brightness_temperature(mir_hotspot, wl=3.74e-6)
-        bg_mir_bt = support_functions.brightness_temperature(mir_background, wl=3.74e-6)
+        hotspot_mir_bt = mir_bt[idx][hotspot_mask]
+        bg_mir_bt = mir_bt[idx][~hotspot_mask]
 
-        result['MIR Hotspot Brightness Temperature'].append(hotspot_mir_bt.mean().round(4))
-        result['MIR Background Brightness Temperature'].append(bg_mir_bt.mean().round(4))
+        result['MIR Hotspot Brightness Temperature'] = hotspot_mir_bt.mean().round(4)
+        result['MIR Background Brightness Temperature'] = bg_mir_bt.mean().round(4)
+        result['MIR Hotspot Max Brightness Temperature'] = hotspot_mir_bt.max().round(4) if hotspot_mir_bt.size > 0 else numpy.nan
 
         # tir hotspot/background brigbhtness temerature analysis
-        tir_hotspot = tir_analysis[idx][hotspot_mask ]
-        tir_background = tir_analysis[idx][~hotspot_mask]
-        hotspot_tir_bt = support_functions.brightness_temperature(tir_hotspot, wl=3.74e-6)
-        bg_tir_bt = support_functions.brightness_temperature(tir_background, wl=3.74e-6)
+        hotspot_tir_bt = tir_bt[idx][hotspot_mask]
+        bg_tir_bt = tir_bt[idx][~hotspot_mask]
 
-        result['TIR Hotspot Brightness Temperature'].append(hotspot_tir_bt.mean().round(4))
-        result['TIR Background Brightness Temperature'].append(bg_tir_bt.mean().round(4))
-
-        try:
-            mir_max_hs_bt = hotspot_mir_bt.max().round(4)
-            tir_max_hs_bt = hotspot_tir_bt.max().round(4)
-        except ValueError:
-            # Handle the no detection case
-            mir_max_hs_bt = numpy.nan
-            tir_max_hs_bt = numpy.nan
-
-        result['MIR Hotspot Max Brightness Temperature'].append(mir_max_hs_bt)
-        result['TIR Hotspot Max Brightness Temperature'].append(tir_max_hs_bt)
+        result['TIR Hotspot Brightness Temperature'] = hotspot_tir_bt.mean().round(4)
+        result['TIR Background Brightness Temperature'] = bg_tir_bt.mean().round(4)
+        result['TIR Hotspot Max Brightness Temperature'] = hotspot_tir_bt.max().round(4) if hotspot_tir_bt.size > 0 else numpy.nan
 
         day_night = support_functions.get_dn(image_date, vent[1], vent[0], elevation)
         sol_zenith, sol_azimuth = support_functions.get_solar_coords(
             image_date, vent[1], vent[0], elevation
         )
 
-        result['Day/Night Flag'].append(day_night)
-        result['Solar Zenith'].append(round(sol_zenith, 1))
-        result['Solar Azimuth'].append(round(sol_azimuth, 1))
+        result['Day/Night Flag'] = day_night
+        result['Solar Zenith'] = round(sol_zenith, 1)
+        result['Solar Azimuth'] = round(sol_azimuth, 1)
+    
+        process_progress.update()
+        return result
+    
+    # Not sure if this is really needed, as this loop is fast, but might
+    # speed things up a bit.
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(_run_calcs, range(img_data.shape[0]))
+    
+    results = pandas.DataFrame(results)
+    results.reset_index(drop=True, inplace=True)
 
-    results = pandas.DataFrame(result)
-    meta['Result Count'] = len(results)
-
-    # Add results that apply to all
+    results['Date'] = img_dates
+    results['Max Probability'] = max_prob
+    results['Pixels Above 0.5 Probability'] = prob_above_05
+    
+    # Single values apply to all records
     results['Sensor'] = sensor.upper()
     results['Volcano ID'] = volc.iloc[0]['id']
-
+    
     # pull in metadata retrieved during the download
-    file_meta = results['Data File'].map(download_meta)
+    file_meta = results['Data File'].map(lambda x: download_meta.get(x, {}))
     results['Satellite'] = file_meta.map(lambda x: x.get('satelite'))
-    results['Data URL'] = file_meta.map(lambda x: x.get('url'))
+    results['Data URL'] = file_meta.map(lambda x: x.get('url'))    
+    
+    
+    ########## IMAGE SAVE/Data File Archive #################
+    # This section deals with saving PNG images and archiving
+    # the pre-processed data files. Remove this section if not
+    # desired
+    #########################################################
+    
+    # Save the .png images. Second loop, but this one doesn't lend itself to 
+    # parallel processing at all.
+    for idx, (image_date, img_file) in tqdm.tqdm(
+        enumerate(zip(img_dates, data_files)), 
+        total=len(img_dates),
+        unit="IMAGES",
+        desc="SAVING IMAGES"
+    ):
+        file_out_dir = _gen_output_dir(img_file, out_dir)
+        file_out_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save MIR images
+        mir_image = file_out_dir / f"{img_file.stem}_mir.png"
+        results.loc[idx, 'MIR Image'] = str(mir_image)
+        
+        _save_fig(
+            mir_data[idx],
+            mir_image,
+            f"Middle Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
+        )
+        
+        # slice_prob_active = prob_active[idx]
+
+        # Save probability matrix to a tiff file
+        # geotiff_file = output_dir / f"{img_file.stem}_probability.tif"
+        # result['Probability TIFF'] = str(geotiff_file)
+
+        # with rasterio.open(
+            # geotiff_file,
+            # 'w',
+            # driver = 'GTiff',
+            # height = slice_prob_active.shape[0],
+            # width = slice_prob_active.shape[1],
+            # count = 1,
+            # dtype = slice_prob_active.dtype,
+            # crs=crs,
+            # transform=transform
+        # ) as dst:
+            # dst.write(slice_prob_active, 1)        
+        
+        # Move the processed data file to the output directory
+        shutil.move(str(img_file), str(file_out_dir / img_file.name))
+    ###################### END IMAGE SECTION ###########################
+    
+    
+    meta['Result Count'] = len(results)
 
     if len(results) > 0:
         results = results.sort_values('Date').reset_index(drop = True)

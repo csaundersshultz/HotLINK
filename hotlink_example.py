@@ -8,7 +8,7 @@ if __name__ == "__main__":
     elevation = 3370 # Used to calculate solar zenith/azimuth angles
 
 
-    dates = ("2013-01-01", "2025-03-01") # YYYY-MM-DD HH:MM, from to.
+    dates = ("2020-10-20", "2021-05-01") # YYYY-MM-DD HH:MM, from to.
 
     # Options: modis,viirs,viirsj2,viirsj1,viirsn
     sensor = 'viirs'

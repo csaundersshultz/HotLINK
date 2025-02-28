@@ -1,6 +1,8 @@
 import functools
 import logging
 
+from hotlink import support_functions
+
 # Stop satpy from printing tracebacks. It clutters out output,
 # and is completly useless in production.
 logging.getLogger('satpy').setLevel(logging.CRITICAL)
@@ -24,7 +26,7 @@ from pyresample import geometry
 from satpy import Scene
 from tqdm import tqdm
 
-from .process import _gen_date_and_dir
+from .process import _gen_output_dir
 
 def area_definition(area_id, lat_lon,sat='modis'):
     utm_x, utm_y, utm_zone, utm_lat_band = utm.from_latlon(lat_lon[0], lat_lon[1])
@@ -100,21 +102,6 @@ def download_batch(results, batch, num, dest):
         earthaccess.download(to_download, dest, threads=1)
 
 
-# Define the pairing map
-viirs_pair_map = {"VNP02IMG": "VNP03IMG", "VJ102IMG": "VJ103IMG", "VJ202IMG": "VJ203IMG"}
-
-# Function to get the match key, with substitution for list1
-def get_match_key(granule, substitute_prefix=False):
-    url = granule.data_links()[0]
-    filename = url.split("/")[-1]  # Extract filename from URL
-    parts = filename.split(".")
-    # If substituting (for list1), map the prefix
-    if substitute_prefix and parts[0] in viirs_pair_map:
-        parts[0] = viirs_pair_map[parts[0]]
-    # Keep everything up to the version, drop processing time and extension
-    match_key = ".".join(parts[:4])  # e.g., VJ103IMG.A2018005.1148.021
-    return match_key
-
 _process_func: functools.partial = None
 def download_preprocess(
     dates,
@@ -137,18 +124,20 @@ def download_preprocess(
 
     results, results2 = make_query(dates,bounding_box,sat)
     num_hits = len(results) + len(results2)
+    
+    cols = ['granule_1']
+    
     if results2:
-        # Match the VIIRS products, checking the file names since the two result
-        # lists may not match 1:1
-        results1_data = [{"granule": g, "match_key": get_match_key(g, substitute_prefix=True)} for g in results]
-        results2_data = [{"granule": g, "match_key": get_match_key(g, substitute_prefix=False)} for g in results2]
-        df1 = pandas.DataFrame(results1_data)
-        df2 = pandas.DataFrame(results2_data)
-        merged = pandas.merge(df1, df2, how="inner", on="match_key", suffixes=("_1", "_2"))
-        results = merged[["granule_1", "granule_2"]].to_numpy().tolist()
+        df = support_functions.match_viirs(results, results2)
+        cols.append("granule_2")
     else:
-        # Just to keep the data structures identical
-        results = list(zip(results))
+        df = pandas.DataFrame(results, columns=['granule_1'])    
+    
+    df['datetime'] = pandas.to_datetime(
+        df['granule_1'].apply(lambda x: x['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'])
+    )
+    df = df.sort_values('datetime')
+    results = df[cols].to_numpy().tolist()
 
     to_download = []
     meta = {}
@@ -174,7 +163,7 @@ def download_preprocess(
             continue
 
         # See if we have downloaded AND PROCESSED this file.
-        _, out_dir = _gen_date_and_dir(processed_name, output, return_date = False)
+        out_dir = _gen_output_dir(processed_name, output)
         out_file = out_dir / processed_name.name
         if out_file.name in existing_output:
             #  We have this in the final output directory, move it into
@@ -205,10 +194,10 @@ def download_preprocess(
     else:
         reader = 'modis_l1b'
         datasets = ['21', '32']
-
+    
     _process_func = functools.partial(load_and_resample, datasets, reader, area)
-
-    with ProcessPoolExecutor(max_workers = 4) as executor:
+    
+    with ProcessPoolExecutor(max_workers=3) as executor:
         # Download/process in batches of no more than batchsize files to save disk space
         # Each file takes around 200MB of space, so 200 files ~=40GB disk space. Processed
         # files are much smaller.
@@ -226,7 +215,10 @@ def download_preprocess(
                 ars3+=sorted(dest.glob('VJ103*'))
                 ars3+=sorted(dest.glob('VJ203*'))
 
-                input_files = zip(ars2, ars3)
+                # Use the match virrs function here in case the two lists aren't equal
+                # This could be the case if a run was interupted, leaving orphaned files.
+                input_files = support_functions.match_viirs(ars2, ars3)
+                input_files = input_files[['granule_1', 'granule_2']].to_numpy().tolist()
             else:
                 # We run zip here to keep the file list in a consistant format with VIIRS.
                 # Each element will be a single-element tuple.
@@ -304,12 +296,13 @@ def _retry_file(files, dest, download_meta):
         for k in range(len(download_files)):
             download_batch(download_files, k, 1, dest)
 
+        print("Files re-downloaded. Processing.")
         try:
             _process_func(files, out_file)
         except Exception as e:
             print("Unable to re-process. Exception occured:", e)
         else:
-            print("File succesfully processed on retry")
+            print("\nFile succesfully processed on retry")
 
     finally:
         # Clean up after the attempt
@@ -322,7 +315,7 @@ def load_and_resample(
     reader: str,
     area: geometry.AreaDefinition,
     in_files: Sequence,
-    out_file: str
+    out_file: str,
 ) -> None:
     """
     Load datasets, resample to a specified area, and save the combined data to a file.
@@ -356,11 +349,13 @@ def load_and_resample(
     """
     # Loading the scene results in warnings about an ineficient chunking operations
     # Since this is SatPy, and we can't do anything about it, just ignore the warnings.
+    from . import wingdbstub
     warnings.simplefilter("ignore", UserWarning)
 
     scn=Scene(reader=reader,filenames=[str(f.absolute()) for f in in_files])
     scn.load(datasets,calibration='radiance')
     cropscn = scn.resample(destination=area, datasets=datasets)
+    
     mir = cropscn[datasets[0]].to_numpy()
     tir = cropscn[datasets[1]].to_numpy()
 
