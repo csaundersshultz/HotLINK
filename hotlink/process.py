@@ -254,6 +254,19 @@ def get_results(
         output=output_dir)
 
     print("Image files processed. Beginning calculations")
+    
+    # Set some constants based on sensor
+    if sensor.upper() == 'MODIS':
+        RES = 1000
+        MIR_WL = support_functions.MODIS_MIR_WL
+        TIR_WL = support_functions.MODIS_TIR_WL
+        RP_CONSTANT = support_functions.MODIS_MIR_RP_CONSTANT
+    else:
+        # VIIRS
+        RES = 375
+        MIR_WL = support_functions.VIIRS_MIR_WL
+        TIR_WL = support_functions.VIIRS_TIR_WL
+        RP_CONSTANT = support_functions.VIIRS_MIR_RP_CONSTANT
 
     # Calculate the GeoTransform for output images
     center_x, center_y, utm_zone, utm_lat_band = utm.from_latlon(*vent)
@@ -297,8 +310,9 @@ def get_results(
 
     mir_analysis = support_functions.crop_center(mir_data, size=24, crop_dimensions=(1, 2))
     tir_analysis = support_functions.crop_center(tir_data, size=24, crop_dimensions=(1, 2))
-    mir_bt = support_functions.brightness_temperature(mir_analysis, wl=3.74e-06)
-    tir_bt = support_functions.brightness_temperature(tir_analysis, wl=3.74e-06)
+        
+    mir_bt = support_functions.brightness_temperature(mir_analysis, wl=MIR_WL)
+    tir_bt = support_functions.brightness_temperature(tir_analysis, wl=TIR_WL)
 
     n_data = img_data.copy()
     n_data[:, :, :, 0] = support_functions.normalize_MIR(n_data[:, :, :, 0])
@@ -333,7 +347,12 @@ def get_results(
         hotspot_pixels = numpy.count_nonzero(hotspot_mask)
         result['Number Hotspot Pixels'] = hotspot_pixels
 
-        rp = support_functions.radiative_power(mir_analysis[idx], hotspot_mask) if hotspot_mask.any() else numpy.nan
+        rp = support_functions.radiative_power(
+            mir_analysis[idx],
+            hotspot_mask,
+            cellsize=RES,
+            rp_constant=RP_CONSTANT
+        ) if hotspot_mask.any() else numpy.nan
 
         result['Hotspot Radiative Power (W)'] = round(rp, 4)
 
