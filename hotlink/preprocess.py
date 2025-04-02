@@ -131,7 +131,7 @@ def download_preprocess(
         df = support_functions.match_viirs(results, results2)
         cols.append("granule_2")
     else:
-        df = pandas.DataFrame(results, columns=['granule_1'])    
+        df = pandas.DataFrame({'granule_1': results,})    
     
     df['datetime'] = pandas.to_datetime(
         df['granule_1'].apply(lambda x: x['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'])
