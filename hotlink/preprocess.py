@@ -113,11 +113,6 @@ def download_preprocess(
 ):
     global _process_func
 
-    try:
-        from . import wingdbstub
-    except ImportError:
-        pass # This is just for my debugging. If the file doesn't exist, that's fine.
-
     dest = pathlib.Path(folder)
     lat,lon=vent
     bounding_box=(float(lon)-0.05,float(lat)-0.05,float(lon)+0.05,float(lat)+0.05)
@@ -168,8 +163,12 @@ def download_preprocess(
         if out_file.name in existing_output:
             #  We have this in the final output directory, move it into
             # the "to be processed" directory for re-processing.
-            shutil.move(str(out_file), str(processed_name))
-            continue
+            try:
+                shutil.move(str(out_file), str(processed_name))
+            except FileNotFoundError:
+                pass
+            else:
+                continue
 
         to_download.extend(items)
 
@@ -349,7 +348,6 @@ def load_and_resample(
     """
     # Loading the scene results in warnings about an ineficient chunking operations
     # Since this is SatPy, and we can't do anything about it, just ignore the warnings.
-    from . import wingdbstub
     warnings.simplefilter("ignore", UserWarning)
 
     scn=Scene(reader=reader,filenames=[str(f.absolute()) for f in in_files])

@@ -405,58 +405,60 @@ def get_results(
     results['Satellite'] = file_meta.map(lambda x: x.get('satelite'))
     results['Data URL'] = file_meta.map(lambda x: x.get('url'))    
     
+    def save_images():        
+        ########## IMAGE SAVE/Data File Archive #################
+        # This section deals with saving PNG images and archiving
+        # the pre-processed data files. Remove this section if not
+        # desired
+        #########################################################
+        
+        # Save the .png images. Second loop, but this one doesn't lend itself to 
+        # parallel processing at all.
+        for idx, (image_date, img_file) in tqdm.tqdm(
+            enumerate(zip(img_dates, data_files)), 
+            total=len(img_dates),
+            unit="IMAGES",
+            desc="SAVING IMAGES"
+        ):
+            file_out_dir = _gen_output_dir(img_file, out_dir)
+            file_out_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save MIR images
+            mir_image = file_out_dir / f"{img_file.stem}_mir.png"
+            results.loc[idx, 'MIR Image'] = str(mir_image)
+            
+            _save_fig(
+                mir_data[idx],
+                mir_image,
+                f"Middle Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
+            )
+            
+            # slice_prob_active = prob_active[idx]
     
-    ########## IMAGE SAVE/Data File Archive #################
-    # This section deals with saving PNG images and archiving
-    # the pre-processed data files. Remove this section if not
-    # desired
-    #########################################################
+            # Save probability matrix to a tiff file
+            # geotiff_file = output_dir / f"{img_file.stem}_probability.tif"
+            # result['Probability TIFF'] = str(geotiff_file)
     
-    # Save the .png images. Second loop, but this one doesn't lend itself to 
-    # parallel processing at all.
-    for idx, (image_date, img_file) in tqdm.tqdm(
-        enumerate(zip(img_dates, data_files)), 
-        total=len(img_dates),
-        unit="IMAGES",
-        desc="SAVING IMAGES"
-    ):
-        file_out_dir = _gen_output_dir(img_file, out_dir)
-        file_out_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save MIR images
-        mir_image = file_out_dir / f"{img_file.stem}_mir.png"
-        results.loc[idx, 'MIR Image'] = str(mir_image)
-        
-        _save_fig(
-            mir_data[idx],
-            mir_image,
-            f"Middle Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
-        )
-        
-        # slice_prob_active = prob_active[idx]
+            # with rasterio.open(
+                # geotiff_file,
+                # 'w',
+                # driver = 'GTiff',
+                # height = slice_prob_active.shape[0],
+                # width = slice_prob_active.shape[1],
+                # count = 1,
+                # dtype = slice_prob_active.dtype,
+                # crs=crs,
+                # transform=transform
+            # ) as dst:
+                # dst.write(slice_prob_active, 1)        
+            
+            # Move the processed data file to the output directory
+            shutil.move(str(img_file), str(file_out_dir / img_file.name))
+        ###################### END IMAGE SECTION ###########################
+    
+    # Uncomment this line to save diagnostic images
+    # save_images()
 
-        # Save probability matrix to a tiff file
-        # geotiff_file = output_dir / f"{img_file.stem}_probability.tif"
-        # result['Probability TIFF'] = str(geotiff_file)
-
-        # with rasterio.open(
-            # geotiff_file,
-            # 'w',
-            # driver = 'GTiff',
-            # height = slice_prob_active.shape[0],
-            # width = slice_prob_active.shape[1],
-            # count = 1,
-            # dtype = slice_prob_active.dtype,
-            # crs=crs,
-            # transform=transform
-        # ) as dst:
-            # dst.write(slice_prob_active, 1)        
-        
-        # Move the processed data file to the output directory
-        shutil.move(str(img_file), str(file_out_dir / img_file.name))
-    ###################### END IMAGE SECTION ###########################
-    
-    
     meta['Result Count'] = len(results)
 
     if len(results) > 0:
