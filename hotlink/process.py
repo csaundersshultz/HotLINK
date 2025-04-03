@@ -283,6 +283,25 @@ def get_results(
     meta['UTM Latitude Band'] = utm_lat_band
 
     data_files = list(data_path.glob('*.npy'))
+    
+    if not data_files:
+        print("WARNING: No data files to process.")
+        # Define the expected columns for an empty DataFrame
+        expected_columns = [
+            'Data File', 'Number Hotspot Pixels', 'Hotspot Radiative Power (W)',
+            'MIR Hotspot Brightness Temperature', 'MIR Background Brightness Temperature',
+            'MIR Hotspot Max Brightness Temperature', 'TIR Hotspot Brightness Temperature',
+            'TIR Background Brightness Temperature', 'TIR Hotspot Max Brightness Temperature',
+            'Day/Night Flag', 'Solar Zenith', 'Solar Azimuth', 'Date', 'Max Probability',
+            'Pixels Above 0.5 Probability', 'Sensor', 'Volcano ID', 'Satellite', 'Data URL'
+        ]
+        # Return an empty DataFrame with the expected structure
+        empty_results = pandas.DataFrame(columns=expected_columns)
+        # Update meta with the failure reason and end time
+        meta['Result Count'] = 0
+        meta['Error'] = "No .npy files found in the data directory"
+        meta['Run End'] = datetime.now(UTC).isoformat()
+        return empty_results, meta    
 
     model = load_hotlink_model()
 
