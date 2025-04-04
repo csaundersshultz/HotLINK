@@ -1,9 +1,16 @@
 import functools
+import logging
+
+from hotlink import support_functions
+
+# Stop satpy from printing tracebacks. It clutters out output,
+# and is completly useless in production.
+logging.getLogger('satpy').setLevel(logging.CRITICAL)
+
 import math
 import pathlib
 import shutil
 import time
-import traceback
 import warnings
 
 from collections.abc import Sequence
@@ -19,7 +26,7 @@ from pyresample import geometry
 from satpy import Scene
 from tqdm import tqdm
 
-from .process import _gen_date_and_dir
+from .process import _gen_output_dir
 
 def area_definition(area_id, lat_lon,sat='modis'):
     utm_x, utm_y, utm_zone, utm_lat_band = utm.from_latlon(lat_lon[0], lat_lon[1])
@@ -95,21 +102,6 @@ def download_batch(results, batch, num, dest):
         earthaccess.download(to_download, dest, threads=1)
 
 
-# Define the pairing map
-viirs_pair_map = {"VNP02IMG": "VNP03IMG", "VJ102IMG": "VJ103IMG", "VJ202IMG": "VJ203IMG"}
-
-# Function to get the match key, with substitution for list1
-def get_match_key(granule, substitute_prefix=False):
-    url = granule.data_links()[0]
-    filename = url.split("/")[-1]  # Extract filename from URL
-    parts = filename.split(".")
-    # If substituting (for list1), map the prefix
-    if substitute_prefix and parts[0] in viirs_pair_map:
-        parts[0] = viirs_pair_map[parts[0]]
-    # Keep everything up to the version, drop processing time and extension
-    match_key = ".".join(parts[:4])  # e.g., VJ103IMG.A2018005.1148.021
-    return match_key
-
 _process_func: functools.partial = None
 def download_preprocess(
     dates,
@@ -127,47 +119,56 @@ def download_preprocess(
 
     results, results2 = make_query(dates,bounding_box,sat)
     num_hits = len(results) + len(results2)
+    
+    cols = ['granule_1']
+    
     if results2:
-        # Match the VIIRS products, checking the file names since the two result
-        # lists may not match 1:1
-        results1_data = [{"granule": g, "match_key": get_match_key(g, substitute_prefix=True)} for g in results]
-        results2_data = [{"granule": g, "match_key": get_match_key(g, substitute_prefix=False)} for g in results2]
-        df1 = pandas.DataFrame(results1_data)
-        df2 = pandas.DataFrame(results2_data)
-        merged = pandas.merge(df1, df2, how="inner", on="match_key", suffixes=("_1", "_2"))
-        results = merged[["granule_1", "granule_2"]].to_numpy().tolist()
+        df = support_functions.match_viirs(results, results2)
+        cols.append("granule_2")
     else:
-        # Just to keep the data structures identical
-        results = list(zip(results))
+        df = pandas.DataFrame({'granule_1': results,})    
+    
+    df['datetime'] = pandas.to_datetime(
+        df['granule_1'].apply(lambda x: x['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'])
+    )
+    df = df.sort_values('datetime')
+    results = df[cols].to_numpy().tolist()
 
     to_download = []
     meta = {}
+
+    existing_processed = set(dest.iterdir())  # Set of Path objects in dest
+    existing_output = {p.name for p in output.rglob("*.npy")}  # Set of filenames in output (recursive)
+
     for items in results:
-        item_names =  [pathlib.Path(x.data_links()[0]) for x in items]
         item_links = [x.data_links()[0] for x in items]
-        meta_value = {
+        item_names =  [pathlib.Path(x) for x in item_links]
+        processed_name: pathlib.Path = _gen_output_name(dest, item_names)
+
+        meta[processed_name.name] = {
             'satelite': items[0]['umm']['Platforms'][0]['ShortName'],
             'url': item_links, # for all items
             'DayNightFlag': items[0]['umm']['DataGranule']['DayNightFlag'],
         }
 
-        processed_name: pathlib.Path = _gen_output_name(dest, item_names)
-        meta[processed_name.name] = meta_value # Left over from the for loop above.
-
         # See if we have downloaded and pre-processed,
         # but not fully processed these files
-        if processed_name.exists():
+        if processed_name in existing_processed:
             # We already have this file, no need to download it again.
             continue
 
         # See if we have downloaded AND PROCESSED this file.
-        _, out_dir = _gen_date_and_dir(processed_name, output)
+        out_dir = _gen_output_dir(processed_name, output)
         out_file = out_dir / processed_name.name
-        if out_file.exists():
+        if out_file.name in existing_output:
             #  We have this in the final output directory, move it into
             # the "to be processed" directory for re-processing.
-            shutil.move(str(out_file), str(processed_name))
-            continue
+            try:
+                shutil.move(str(out_file), str(processed_name))
+            except FileNotFoundError:
+                pass
+            else:
+                continue
 
         to_download.extend(items)
 
@@ -192,17 +193,14 @@ def download_preprocess(
     else:
         reader = 'modis_l1b'
         datasets = ['21', '32']
-
+    
     _process_func = functools.partial(load_and_resample, datasets, reader, area)
-
-    with ProcessPoolExecutor() as executor:
+    
+    with ProcessPoolExecutor(max_workers=3) as executor:
         # Download/process in batches of no more than batchsize files to save disk space
         # Each file takes around 200MB of space, so 200 files ~=40GB disk space. Processed
         # files are much smaller.
         for k in range(batches):
-            futures = []
-            args = {}
-
             print(f'Downloading files (batch {k + 1}/{batches})')
             download_batch(results, k, num, folder)
 
@@ -216,7 +214,10 @@ def download_preprocess(
                 ars3+=sorted(dest.glob('VJ103*'))
                 ars3+=sorted(dest.glob('VJ203*'))
 
-                input_files = zip(ars2, ars3)
+                # Use the match virrs function here in case the two lists aren't equal
+                # This could be the case if a run was interupted, leaving orphaned files.
+                input_files = support_functions.match_viirs(ars2, ars3)
+                input_files = input_files[['granule_1', 'granule_2']].to_numpy().tolist()
             else:
                 # We run zip here to keep the file list in a consistant format with VIIRS.
                 # Each element will be a single-element tuple.
@@ -227,34 +228,49 @@ def download_preprocess(
             t1 = time.time()
             print("Downloading batch", k + 1, "complete. Beginning resampling.")
 
-            for files in tqdm(input_files, total = len(input_files), desc = "SUBMITTING TASKS", unit = "file"):
+            futures = [None] * len(input_files) # pre-allocte for a small speedup. Because, why not?
+            args = {}
+
+            for idx, files in enumerate(tqdm(
+                input_files,
+                total = len(input_files),
+                desc = "SUBMITTING TASKS",
+                unit = "file"
+            )):
                 out_file =  _gen_output_name(dest, files)
 
                 future = executor.submit(_process_func, files, out_file)
-                futures.append(future)
+                futures[idx] = future
                 args[future] = (files, out_file.name)
 
             # Verify completion of all resampling operations.
-            for future in tqdm(as_completed(futures), total = len(futures), desc ="PRE-PROCESSING IMAGES", unit = "file"):
+            for future in tqdm(
+                as_completed(futures),
+                total = len(futures),
+                desc ="PRE-PROCESSING IMAGES",
+                unit = "file"
+            ):
                 files, out_filename = args[future]
 
                 try:
                     future.result()
                 except Exception as e:
-                    # if we wanted to retry, we could get the original URL for this file
-                    # by calling meta[files[0].name]
+                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
+                    for file in files:
+                        file.unlink(missing_ok = True)
+
                     if out_filename not in meta:
                         print(f"Unable to process file {files[0].name}. No download URL found when attempting to retry. Skipping.")
-                        print("ERROR:", e)
-
-                        for file in files:
-                            file.unlink(missing_ok = True)
                         continue
 
-                    _retry_file(files, dest, meta[out_filename])
+                    try:
+                        _retry_file(files, dest, meta[out_filename])
+                    except Exception as e2:
+                        # In theory, this will never be called, as exceptions should be handled
+                        # within the _retry_file function. However, if one slips through,
+                        # handle it here.
+                        print(f"Unable to retry file. Retry failed with exception: {e2}")
 
-                    print(f"Unable to process file(s) {files} Exception occured:\n{e}")
-                    traceback.print_exc()
                     continue
 
             print("Resampling of batch", k + 1, "complete in", time.time() - t1, "seconds")
@@ -269,23 +285,28 @@ def _gen_output_name(dest, files):
 
 def _retry_file(files, dest, download_meta):
     print("Retrying download/process of file(s):", files)
-    out_file = _gen_output_name(dest, files)
-    download_files = download_meta['url']
-    if not isinstance(download_files, (list, tuple)):
-        download_files = (download_files, )
-
-    # Download one at a time
-    for k in range(len(download_files)):
-        download_batch(download_files, k, 1, dest)
-
     try:
-        _process_func(files, out_file)
-    except Exception as e:
-        print("Unable to re-process. Exception occured:", e)
+        out_file = _gen_output_name(dest, files)
+        download_files = download_meta['url']
+        if not isinstance(download_files, (list, tuple)):
+            download_files = (download_files, )
 
-    # Clean up after the attempt
-    for file in files:
-        file.unlink(missing_ok = True) # Just make sure it is gone.
+        # Download one at a time
+        for k in range(len(download_files)):
+            download_batch(download_files, k, 1, dest)
+
+        print("Files re-downloaded. Processing.")
+        try:
+            _process_func(files, out_file)
+        except Exception as e:
+            print("Unable to re-process. Exception occured:", e)
+        else:
+            print("\nFile succesfully processed on retry")
+
+    finally:
+        # Clean up after the attempt
+        for file in files:
+            file.unlink(missing_ok = True) # Just make sure it is gone.
 
 
 def load_and_resample(
@@ -293,7 +314,7 @@ def load_and_resample(
     reader: str,
     area: geometry.AreaDefinition,
     in_files: Sequence,
-    out_file: str
+    out_file: str,
 ) -> None:
     """
     Load datasets, resample to a specified area, and save the combined data to a file.
@@ -332,6 +353,7 @@ def load_and_resample(
     scn=Scene(reader=reader,filenames=[str(f.absolute()) for f in in_files])
     scn.load(datasets,calibration='radiance')
     cropscn = scn.resample(destination=area, datasets=datasets)
+    
     mir = cropscn[datasets[0]].to_numpy()
     tir = cropscn[datasets[1]].to_numpy()
 

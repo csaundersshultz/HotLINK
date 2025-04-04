@@ -336,6 +336,7 @@ def get_dn(datetime, volcano_lat, volcano_lng, volcano_elevation, twilight="CIVI
 
     sun = ephem.Sun(obs)
     sun.compute(obs)
+    
     sun_angle = np.rad2deg(float(sun.alt))
 
     # Set threshold for different twilight types
@@ -472,3 +473,47 @@ def latlon_to_utm(lat, lon):
     )
     x, y = proj_utm(lon, lat)
     return x, y, proj_utm.crs
+
+# Define the pairing map for viirs files.
+viirs_pair_map = {"VNP02IMG": "VNP03IMG", "VJ102IMG": "VJ103IMG", "VJ202IMG": "VJ203IMG"}
+
+# Function to get the match key, with substitution for list1
+def get_match_key(granule, substitute_prefix=False):
+    """
+        Get a string to match the associated VIIRS file on. Works with either
+        earthdata granules or filesystem paths (str or pathlib.Path)
+    """
+    try:
+        url = granule.data_links()[0]
+    except AttributeError:
+        url = str(granule)
+        
+    filename = url.split("/")[-1]  # Extract filename from URL
+    parts = filename.split(".")
+    # If substituting (for list1), map the prefix
+    if substitute_prefix and parts[0] in viirs_pair_map:
+        parts[0] = viirs_pair_map[parts[0]]
+    # Keep everything up to the version, drop processing time and extension
+    match_key = ".".join(parts[:4])  # e.g., VJ103IMG.A2018005.1148.021
+    return match_key
+
+
+def match_viirs(results: list | tuple, results2: list | tuple) -> pandas.DataFrame:
+    """
+        Match the VIIRS products, checking the file names since the two result
+        lists may not match 1:1
+    """
+    results1_data = [{
+        "granule": g,
+         "match_key": get_match_key(g, substitute_prefix=True)
+    } for g in results]
+    df = pandas.DataFrame(results1_data)
+    
+    results2_data = [{
+        "granule": g,
+        "match_key": get_match_key(g, substitute_prefix=False)
+    } for g in results2]
+    df2 = pandas.DataFrame(results2_data)
+    df = pandas.merge(df, df2, how="inner", on="match_key", suffixes=("_1", "_2"))
+
+    return df
