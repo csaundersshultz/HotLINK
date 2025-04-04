@@ -126,7 +126,11 @@ def download_preprocess(
         df = support_functions.match_viirs(results, results2)
         cols.append("granule_2")
     else:
-        df = pandas.DataFrame({'granule_1': results,})    
+        df = pandas.DataFrame({'granule_1': results,})
+        
+    if df.empty:
+        print("No files found to download and preprocess after filtering.")
+        return {}
     
     df['datetime'] = pandas.to_datetime(
         df['granule_1'].apply(lambda x: x['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'])
