@@ -431,7 +431,7 @@ def get_results(
         unit="IMAGES",
         desc="SAVING IMAGES"
     ):
-        def save_image():        
+        def save_images():        
             ########## IMAGE SAVE/Data File Archive #################
             # This section deals with saving PNG images and archiving
             # the pre-processed data files. Remove this section if not
