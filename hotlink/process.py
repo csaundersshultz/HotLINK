@@ -29,7 +29,7 @@ def _gen_output_dir(
 
     Constructs a directory path under `base_dir` using the year and month extracted
     from `input_filename.stem`.
-    
+
     Parameters
     ----------
     input_filename : pathlib.Path
@@ -62,20 +62,20 @@ def _save_fig(img, out, title):
 # def save_fig(img, out, title, lat_bounds, lon_bounds):
     # with lock:
         # fig = plt.figure(figsize=(4, 4))
-        
+
         # # Get the extent in the format [left, right, bottom, top]
         # extent = [lon_bounds[0], lon_bounds[1], lat_bounds[0], lat_bounds[1]]
-        
+
         # # Display the image with coordinates
         # ax = plt.gca()
         # im = ax.imshow(img, extent=extent, origin='lower')
-        
+
         # # Add scale bar (1km)
         # # Convert distance to decimal degrees (approximately)
         # # At equator, 1 degree ≈ 111 km, but varies with latitude
         # lat_mid = (lat_bounds[0] + lat_bounds[1]) / 2
         # lon_per_km = 1 / (111.32 * np.cos(np.radians(lat_mid)))  # Degrees per km at this latitude
-        
+
         # # Add scale bar
         # from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
         # import matplotlib.font_manager as fm
@@ -90,14 +90,14 @@ def _save_fig(img, out, title):
                                   # size_vertical=0.005,
                                   # fontproperties=fontprops)
         # ax.add_artist(scalebar)
-        
+
         # plt.colorbar(im)
         # plt.title(title)
         # plt.xlabel('Longitude')
         # plt.ylabel('Latitude')
-        
+
         # fig.savefig(str(out))
-        # plt.close(fig)    
+        # plt.close(fig)
     fig = plt.figure(figsize=(4, 4))
     plt.imshow(img)
     plt.colorbar()
@@ -108,7 +108,7 @@ def _save_fig(img, out, title):
 def load_data_files(files):
     # Load the first file to determine the shape and store its data
     first_data = numpy.load(files[0])
-    
+
     # pre-allocate the image_dates array. Minor speed up, if any, but why not?
     image_dates = [None] * len(files)
     image_dates[0] = datetime.strptime(files[0].stem, '%Y%m%d_%H%M')
@@ -254,7 +254,7 @@ def get_results(
         output=output_dir)
 
     print("Image files processed. Beginning calculations")
-    
+
     # Set some constants based on sensor
     if sensor.upper() == 'MODIS':
         RES = 1000
@@ -283,7 +283,7 @@ def get_results(
     meta['UTM Latitude Band'] = utm_lat_band
 
     data_files = list(data_path.glob('*.npy'))
-    
+
     if not data_files:
         print("WARNING: No data files to process.")
         # Define the expected columns for an empty DataFrame
@@ -301,7 +301,7 @@ def get_results(
         meta['Result Count'] = 0
         meta['Error'] = "No .npy files found in the data directory"
         meta['Run End'] = datetime.now(UTC).isoformat()
-        return empty_results, meta    
+        return empty_results, meta
 
     model = load_hotlink_model()
 
@@ -316,10 +316,10 @@ def get_results(
 
     # Fill NaN values in the mir/tir arrays with min values for the array
     if nan_mask_mir.any():
-        # create arrays with the minimum value for each image        
+        # create arrays with the minimum value for each image
         min_mir_observed = numpy.nanmin(mir_data, axis=(1, 2), keepdims=True)
         min_mir_observed = numpy.broadcast_to(min_mir_observed, mir_data.shape)
-        # Fill NaN values with the corresponding minimum values        
+        # Fill NaN values with the corresponding minimum values
         mir_data[nan_mask_mir] = min_mir_observed[nan_mask_mir]
 
     if nan_mask_tir.any():
@@ -329,13 +329,13 @@ def get_results(
 
     mir_analysis = support_functions.crop_center(mir_data, size=24, crop_dimensions=(1, 2))
     tir_analysis = support_functions.crop_center(tir_data, size=24, crop_dimensions=(1, 2))
-        
+
     mir_bt = support_functions.brightness_temperature(mir_analysis, wl=MIR_WL)
     tir_bt = support_functions.brightness_temperature(tir_analysis, wl=TIR_WL)
 
     n_data = img_data.copy()
     n_data[:, :, :, 0] = support_functions.normalize_MIR(n_data[:, :, :, 0])
-    n_data[:, :, :, 1] = support_functions.normalize_MIR(n_data[:, :, :, 1])
+    n_data[:, :, :, 1] = support_functions.normalize_TIR(n_data[:, :, :, 1])
 
     predict_data = support_functions.crop_center(n_data, crop_dimensions=(1, 2))
     predict_data = predict_data.reshape(n_data.shape[0], 64, 64, 2)
@@ -359,7 +359,7 @@ def get_results(
         result = {}
         img_file = data_files[idx]
         image_date = img_dates[idx]
-        
+
         result['Data File'] = img_file.name
 
         hotspot_mask = apply_hysteresis_threshold(prob_active[idx], low=0.4, high=0.5).astype('bool')
@@ -399,68 +399,68 @@ def get_results(
         result['Day/Night Flag'] = day_night
         result['Solar Zenith'] = round(sol_zenith, 1)
         result['Solar Azimuth'] = round(sol_azimuth, 1)
-    
+
         process_progress.update()
         return result
-    
+
     # Not sure if this is really needed, as this loop is fast, but might
     # speed things up a bit.
     with ThreadPoolExecutor() as executor:
         results = executor.map(_run_calcs, range(img_data.shape[0]))
-    
+
     results = pandas.DataFrame(results)
     results.reset_index(drop=True, inplace=True)
 
     results['Date'] = img_dates
     results['Max Probability'] = max_prob
     results['Pixels Above 0.5 Probability'] = prob_above_05
-    
+
     # Single values apply to all records
     results['Sensor'] = sensor.upper()
     results['Volcano ID'] = volc.iloc[0]['id']
-    
+
     # pull in metadata retrieved during the download
     file_meta = results['Data File'].map(lambda x: download_meta.get(x, {}))
     results['Satellite'] = file_meta.map(lambda x: x.get('satelite'))
-    results['Data URL'] = file_meta.map(lambda x: x.get('url'))    
-    
+    results['Data URL'] = file_meta.map(lambda x: x.get('url'))
+
     SAVE_IMAGES = False # TODO: make this a user passable flag somewhere.
 
     for idx, (image_date, img_file) in tqdm.tqdm(
-        enumerate(zip(img_dates, data_files)), 
+        enumerate(zip(img_dates, data_files)),
         total=len(img_dates),
         unit="IMAGES",
         desc="SAVING IMAGES"
     ):
-        if SAVE_IMAGES:        
+        if SAVE_IMAGES:
             ########## IMAGE SAVE/Data File Archive #################
             # This section deals with saving PNG images and archiving
             # the pre-processed data files. Remove this section if not
             # desired
             #########################################################
-            
-            # Save the .png images. Second loop, but this one doesn't lend itself to 
-            # parallel processing at all.        
+
+            # Save the .png images. Second loop, but this one doesn't lend itself to
+            # parallel processing at all.
             file_out_dir = _gen_output_dir(img_file, out_dir)
             file_out_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Save MIR images
             mir_image = file_out_dir / f"{img_file.stem}_mir.png"
             results.loc[idx, 'MIR Image'] = str(mir_image)
-            
+
             _save_fig(
                 mir_data[idx],
                 mir_image,
                 f"Middle Infrared\n{image_date.strftime('%Y-%m-%d %H:%M')}"
             )
-            
+
             # slice_prob_active = prob_active[idx]
-    
+
             # Optional: save probability GeoTIFF (currently disabled)
             # NOTE: These files are EXTREAMLY tiny at only 24px x 24px
             # geotiff_file = output_dir / f"{img_file.stem}_probability.tif"
             # result['Probability TIFF'] = str(geotiff_file)
-    
+
             # with rasterio.open(
                 # geotiff_file,
                 # 'w',
@@ -472,12 +472,12 @@ def get_results(
                 # crs=crs,
                 # transform=transform
             # ) as dst:
-                # dst.write(slice_prob_active, 1)        
-            
+                # dst.write(slice_prob_active, 1)
+
             # Move the processed data file to the output directory
             shutil.move(str(img_file), str(file_out_dir / img_file.name))
             ###################### END IMAGE SECTION ###########################
-            
+
         img_file.unlink(missing_ok=True)
 
     meta['Result Count'] = len(results)
