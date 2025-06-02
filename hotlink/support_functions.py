@@ -508,12 +508,17 @@ def match_viirs(results: list | tuple, results2: list | tuple) -> pandas.DataFra
          "match_key": get_match_key(g, substitute_prefix=True)
     } for g in results]
     df = pandas.DataFrame(results1_data)
+    if len(df) == 0:
+        return df
     
     results2_data = [{
         "granule": g,
         "match_key": get_match_key(g, substitute_prefix=False)
     } for g in results2]
     df2 = pandas.DataFrame(results2_data)
+    if len(df2) == 0:
+        return df2
+    
     df = pandas.merge(df, df2, how="inner", on="match_key", suffixes=("_1", "_2"))
 
     return df

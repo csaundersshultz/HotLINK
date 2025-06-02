@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hotlink"
-version = "1.5"
+version = "1.7"
 description = "the HOTspot Learning and Identification NetworK"
 readme = "README.md"
 requires-python = ">=3.11, <3.12"
