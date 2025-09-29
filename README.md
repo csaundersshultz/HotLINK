@@ -4,7 +4,9 @@ Author: Pablo Saunders-Shultz <csaundersshultz@gmail.com>
 Contributors: Mario Fernando Angarita Vargas <mfangaritasr@alaska.edu>, Israel Brewster
 
 ## Overview
-HotLINK is a deep learning model built in tensorflow, trained to detect volcanic thermal hotspots in VIIRS infrared imagery. A manuscript describing HotLINK in detail is still in review. 
+HotLINK is a deep learning model built in tensorflow, trained to detect volcanic thermal hotspots in VIIRS infrared imagery. A manuscript describing HotLINK in detail has been published, please cite this publication if you use this work.
+https://www.frontiersin.org/journals/earth-science/articles/10.3389/feart.2024.1345104/full
+
 
 To install HotLINK in your python environment, run  
 `pip install git+https://github.com/csaundersshultz/HotLINK@main`
