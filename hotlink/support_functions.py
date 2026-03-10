@@ -13,6 +13,7 @@ import urllib
 import numpy as np
 import ephem
 import pandas
+import pathlib
 
 from pyproj import Proj
 from scipy.ndimage import generate_binary_structure
@@ -488,13 +489,13 @@ def get_match_key(granule, substitute_prefix=False):
     except AttributeError:
         url = str(granule)
         
-    filename = url.split("/")[-1]  # Extract filename from URL
+    filename = pathlib.Path(url).name # Extract filename from URL
     parts = filename.split(".")
     # If substituting (for list1), map the prefix
     if substitute_prefix and parts[0] in viirs_pair_map:
         parts[0] = viirs_pair_map[parts[0]]
     # Keep everything up to the version, drop processing time and extension
-    match_key = ".".join(parts[:4])  # e.g., VJ103IMG.A2018005.1148.021
+    match_key = ".".join(parts[:3])  # e.g., VJ103IMG.A2018005.1148 --> dropped collection version, which may differ between matching files!
     return match_key
 
 
