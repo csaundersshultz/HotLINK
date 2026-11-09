@@ -12,3 +12,7 @@ To install HotLINK in your python environment, run
 `pip install git+https://github.com/csaundersshultz/HotLINK@main`
 
 The tutorial file found here (HotLINK_tutorial.ipynb) can be opened in google colab to run without the need for any local installation, and to see usage of most of the functions supplied here. 
+
+
+(update 2026-11-09) The labeled datasets which went into building HotLINK can be found here:
+https://zenodo.org/records/24020173
